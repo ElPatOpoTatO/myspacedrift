@@ -30,6 +30,33 @@ Ya en el mando, se toca:
 - Lado derecho — propulsor derecho
 - Ambos lados — freno
 
+## Demo
+
+El menú tiene tres opciones: `PLAY`, `DEMO` y `HIGH SCORES`. `DEMO` es para
+mirar: la máquina juega una partida de verdad y el juego se explica solo
+mientras ella vuela, así que sirve para enseñárselo a alguien sin tener que
+narrarlo.
+
+Se ve la partida entera —marcador, nivel, sonido y campo a plena luz— y encima
+dos cosas que no están al jugar:
+
+- La franja de abajo, la misma que muestra los controles en el menú, se
+  **enciende** con el propulsor que la máquina está apretando en ese instante.
+  La etiqueta está donde va el dedo en el mando, así que se lee sin traducir:
+  se ve encenderse `LEFT THRUST` y a la nave girar hacia allá.
+- Un cartel cuenta de a una regla, en el orden en que hacen falta para entender
+  lo que se está viendo: primero que hay alguien volando, después cómo se gira,
+  después que el freno no detiene del todo, y recién al final los puntos.
+
+Cualquier toque —o cualquier propulsor— sale al menú, y vuelve con `PLAY`
+marcado. El botón de sonido es el único que no saca de la demo. Si la máquina
+choca, la partida se rearma sola: no entra al top 10 y la explicación sigue
+donde iba.
+
+Es distinta de la demo de fondo, la que arranca sola tras unos segundos sin
+tocar nada en el menú: esa queda **detrás** de las opciones, apagada y en
+silencio, para no competir con el menú. La elegida es la que enseña.
+
 ## Partir meteoros
 
 Casi siempre una bala revienta la roca entera, pero entre el 5% y el 10% de los
@@ -164,6 +191,7 @@ node dev/audio-test.mjs     # renderiza cada sonido a PCM y lo comprueba
 node dev/input-test.mjs     # que ningún control se quede pegado
 node dev/entry-test.mjs     # que la nave entre bien al empezar cada partida
 node dev/layout-test.mjs    # que el juego ocupe exactamente la pantalla visible
+node dev/demo-test.mjs      # que las dos demos sigan siendo lo que son
 npx http-server -p 8080     # y abre /dev/audio-lab.html para escuchar los sonidos
 ```
 

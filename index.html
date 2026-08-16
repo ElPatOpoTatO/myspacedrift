@@ -206,8 +206,12 @@ const CFG = {
   enginePulseHz: 18,             // el "putt-putt": la portadora se abre y cierra a esta tasa
   engineVol:     0.05,
 
+  // --- modo demo (§12.2) ---
+  attractDelay:  6.0,            // s de inactividad en el menu antes de la demo de fondo
+  demoCardTime:  4.6,            // s que cada cartel de la demo elegida queda en pantalla
+                                 // (hay que poder leerlo de un renglon sin perder de vista la nave)
+
   // --- otros ---
-  attractDelay:  6.0,            // s de inactividad en el menu antes del modo demo
   maxScores:     10,
 };
 
@@ -1029,7 +1033,7 @@ const SHIP_SEGS = (() => {
 const DAMAGED_HIDE = [1, 6]; // segmentos que faltan tras perder la primera vida
 
 /* ============================ estado ============================ */
-const SCREEN = { MENU: 'MENU', PLAY: 'PLAY', DEAD: 'DEAD', INITIALS: 'INITIALS', SCORES: 'SCORES', ROTATE: 'ROTATE' };
+const SCREEN = { MENU: 'MENU', PLAY: 'PLAY', DEMO: 'DEMO', DEAD: 'DEAD', INITIALS: 'INITIALS', SCORES: 'SCORES', ROTATE: 'ROTATE' };
 let screen = SCREEN.MENU;
 let prevScreen = SCREEN.MENU;
 
@@ -1039,7 +1043,7 @@ const G = {
   score: 0, level: 1, nextLevelAt: CFG.levelBase,
   time: 0, spawnTimer: 0, refill: 0,
   flash: 0, levelBanner: 0, timeScale: 1,
-  deathTimer: 0, attract: false,
+  deathTimer: 0, attract: false, demo: false,
   entry: false, entryT: 0,          // la nave todavia esta llegando: manda el autopiloto
   buttons: [],
 };
@@ -1192,23 +1196,33 @@ function spawnPickup(m) {
 }
 
 /* ============================ update de partida ============================ */
-function startGame(attract) {
+// Tres modos con la misma partida detras (§12.2):
+//   'play'    — la maneja el jugador.
+//   'attract' — la maneja el bot de fondo, detras del menu: se ve apagada,
+//               no se oye y no vibra. Arranca sola por inactividad.
+//   'demo'    — esa misma partida del bot, pero elegida a proposito en el menu:
+//               pantalla completa, marcador, sonido y los carteles que explican
+//               que esta apretando la maquina. Es la que ensena a jugar.
+function startGame(mode) {
   G.meteors.length = 0; G.bullets.length = 0; G.pickups.length = 0;
   G.shards.length = 0; G.rings.length = 0;
   G.score = 0; G.level = 1; G.nextLevelAt = CFG.levelBase;
   G.time = 0; G.spawnTimer = 0; G.refill = 1.6;
   G.flash = 0; G.levelBanner = 0; G.timeScale = 1; G.deathTimer = 0;
-  G.attract = !!attract;
-  Sfx.quiet = G.attract;            // la demo del menu se ve, pero no se oye ni vibra
+  G.attract = mode !== 'play';      // en los dos demos vuela la maquina
+  G.demo    = mode === 'demo';
+  Sfx.quiet = G.attract && !G.demo; // la de fondo se ve pero no se oye; la elegida suena
   // La partida no empieza con la nave puesta en el centro: empieza con la nave
   // llegando. Nace quieta, fuera de la pantalla, pegada a un borde al azar y con
   // el morro girado al azar, y entra manejando con los mismos motores, la misma
   // inercia y la misma deriva que va a tener el jugador. Hasta que llega
-  // al centro no hay control, ni disparo, ni puntaje, ni choques.
+  // al centro no hay control, ni disparo, ni puntaje, ni choques. Los tres modos
+  // entran igual: la demo tiene que ensenar la partida que el jugador va a jugar.
   const e = entryStart();
   G.ship = newShip(e.x, e.y, e.a);
   G.entry = true; G.entryT = 0;
-  if (!attract) screen = SCREEN.PLAY;
+  if (mode === 'play') screen = SCREEN.PLAY;
+  else if (mode === 'demo') screen = SCREEN.DEMO;
 }
 
 // Punto y rumbo de entrada: un borde al azar y el morro apuntando adentro con
@@ -1285,7 +1299,9 @@ function updatePlay(dt) {
   const targetAv = both ? 0 : ((R ? CFG.shipRot : 0) - (L ? CFG.shipRot : 0));
   s.av += (targetAv - s.av) * (1 - Math.exp(-dt / rotTau()));
   s.a += s.av * dt;
-  Sfx.engine((L || R) && !G.attract && s.alive);
+  // El motor de la demo elegida SI suena: oir el chorro justo cuando se enciende
+  // la etiqueta de abajo es media explicacion. El de la demo de fondo no.
+  Sfx.engine((L || R) && (!G.attract || G.demo) && s.alive);
 
   const maxSp = CFG.shipMaxSpeed * curve().speed;
 
@@ -1445,7 +1461,8 @@ function updatePlay(dt) {
     G.deathTimer += dt;
     G.timeScale = clamp(0.22 + G.deathTimer * 0.9, 0.22, 1);
     if (G.deathTimer > 1.5) {
-      if (G.attract) startGame(true);
+      // la maquina no entra al top 10: se le arma otra partida en el mismo modo
+      if (G.attract) startGame(G.demo ? 'demo' : 'attract');
       else endRun();
     }
   }
@@ -1648,6 +1665,42 @@ function steerTo(s, want, hold) {
   if (Math.abs(d) < 0.18) return { left: !!hold, right: !!hold };
   return { left: d < 0, right: d > 0 };
 }
+
+/* ------------------------- carteles de la demo (§12.2) -------------------------
+   La demo elegida en el menu tiene que ENSENAR, no solo verse bonita. Lo hace
+   con dos cosas a la vez: abajo se enciende el motor que la maquina esta
+   apretando en ese mismo instante — la posicion de la etiqueta es la misma que
+   la del dedo en el mando, asi que se lee sin traducir — y encima un cartel
+   cuenta de a UNA regla.
+   El orden no es decorativo: primero que hay alguien volando, despues como se
+   gira, despues que no se frena del todo, y recien al final los puntos. Es el
+   orden en que hacen falta para entender lo que se esta viendo.
+   Los renglones se mantienen cortos a proposito: entran en el LCD mas angosto
+   (160 puntos) sin salirse del cuadro.
+   -------------------------------------------------------------------- */
+const Demo = (() => {
+  const CARDS = [
+    ['THE MACHINE IS FLYING', 'WATCH THE BAR BELOW'],
+    ['THE ENGINE NEVER STOPS', 'YOU ONLY STEER'],
+    ['ONE SIDE TURNS', 'HOLD IT TO TURN MORE'],
+    ['BOTH SIDES BRAKE', 'THE DRIFT KEEPS GOING'],
+    ['ANY THRUSTER FIRES', 'TURN TO AIM'],
+    ['SMALL ROCKS PAY MORE', 'LEVELS SHRINK THEM'],
+    ['GRAB THE PICK UPS', 'SHIELD AND REPAIR'],
+    ['TWO HITS END THE RUN', 'TOUCH TO GO BACK'],
+  ];
+  let i = 0, t = 0;
+  return {
+    // Solo al entrar desde el menu: si la nave muere, la partida vuelve a
+    // empezar pero la explicacion sigue donde iba, que es una sola y continua.
+    reset() { i = 0; t = 0; },
+    tick(dt) {
+      t += dt;
+      if (t >= CFG.demoCardTime) { t -= CFG.demoCardTime; i = (i + 1) % CARDS.length; }
+    },
+    get card() { return CARDS[i]; }
+  };
+})();
 
 /* ============================ high scores ============================ */
 let hs = { list: [], initials: [0, 0, 0], slot: 0, pending: null, holdT: 0, holdDir: 0, fromRun: false };
@@ -2138,7 +2191,7 @@ function muteBox() {
   return worldBox(m.x - pad, m.y - pad, 8 * m.s + 2 * pad, 8 * m.s + 2 * pad, 'MUTE');
 }
 function muteActive() {
-  return screen === SCREEN.PLAY || screen === SCREEN.MENU
+  return screen === SCREEN.PLAY || screen === SCREEN.MENU || screen === SCREEN.DEMO
       || screen === SCREEN.DEAD || screen === SCREEN.SCORES;
 }
 function drawMuteButton() {
@@ -2159,7 +2212,19 @@ const HINT_SETS = [
   ['LEFT THRUST', 'BOTH = BRAKE', 'RIGHT THRUST'],
   ['LEFT', 'BRAKE', 'RIGHT'],
 ];
-function drawControlHints(y, tone) {
+// Una pista suelta. Encendida se dibuja en negativo, igual que una fila de menu
+// con el dedo encima: es el mismo lenguaje del hardware para "esto esta apretado".
+function hintLabel(str, x, y, align, tone, on) {
+  if (!on) { text(str, x, y, 1, align, tone); return; }
+  const w = Font.width(str, 1);
+  const px = align === 'left' ? x : align === 'center' ? Math.round(x - w / 2) : Math.round(x - w);
+  ctx.fillStyle = TONE[3];
+  ctx.fillRect(px - 2, y - 1, w + 4, Font.GH + 2);
+  text(str, x, y, 1, align, 0);
+}
+// live = { left, right, both }: lo usa la demo para encender la etiqueta del
+// motor que la maquina tiene apretado ahora mismo. Sin live la franja es fija.
+function drawControlHints(y, tone, live) {
   const t = tone === undefined ? 1 : tone;
   const edge = T, gap = 6, cx = LW / 2;
   for (const [l, c, r] of HINT_SETS) {
@@ -2167,9 +2232,9 @@ function drawControlHints(y, tone) {
     const cLeft = cx - wc / 2, cRight = cx + wc / 2;
     if (edge + wl + gap > cLeft) continue;              // el bloque de la izquierda pisa el del medio
     if (cRight + gap > LW - edge - wr) continue;        // ... o el del medio pisa el de la derecha
-    text(l, edge, y, 1, 'left', t);
-    text(c, cx, y, 1, 'center', t);
-    text(r, LW - edge, y, 1, 'right', t);
+    hintLabel(l, edge, y, 'left', t, live && live.left);
+    hintLabel(c, cx, y, 'center', t, live && live.both);
+    hintLabel(r, LW - edge, y, 'right', t, live && live.right);
     return;
   }
 }
@@ -2219,11 +2284,44 @@ function drawMenu() {
   ctx.fillStyle = TONE[2];
   ctx.fillRect(Math.round(cx - tw / 2), T + Font.GH * ts + 3, tw, 1);
   if (Tint.osd > 0) text('TINT ' + Tint.name, cx, 3 * T + 6, 1, 'center', 2);
-  menuBox(['PLAY', 'HIGH SCORES'], cx, 5 * T, 112);
+  // Tres filas: el cuadro llega hasta 82 y la ayuda de navegacion hasta 93, asi
+  // que el codigo baja una fila entera para no quedar debajo.
+  menuBox(['PLAY', 'DEMO', 'HIGH SCORES'], cx, 5 * T, 112);
   if (G.attract) text('DEMO', T / 2, T / 2, 1, 'left', 2);
-  else drawLinkCode(cx, 11 * T, 2, 'center');   // el codigo se lee desde el sillon
+  else drawLinkCode(cx, 12 * T, 2, 'center');   // el codigo se lee desde el sillon
   drawControlHints(LH() - 2 - Font.GH - safeY(), 1);
   drawMuteButton();
+}
+
+/* La demo elegida: es la pantalla de juego entera — mismo marcador, mismo
+   sonido, mismo campo a plena luz — y encima la capa que explica. Nada de esto
+   se dibuja en la demo de fondo del menu, que tiene que quedar detras de las
+   opciones y no competir con ellas. */
+function drawDemo() {
+  const cx = LW / 2;
+  const hintY = LH() - 2 - Font.GH - safeY();
+  const s = G.ship;
+  const L = !!(s && s.left), R = !!(s && s.right);
+
+  drawHud();                                     // marcador y nivel: la demo muestra el juego completo
+  // El marcador manda en la primera fila. En un LCD angosto SCORE llega hasta el
+  // centro, asi que el rotulo baja una fila entera en vez de encimarsele.
+  const hudRow = safeY() + T / 2;
+  const scoreEnd = safeX() + T / 2 + Font.width('SCORE 000000', 1);
+  const y0 = (cx - Font.width('DEMO', 1) / 2 - 6 > scoreEnd) ? hudRow : hudRow + 9;
+  text('DEMO', cx, y0, 1, 'center', blink(420) ? 3 : 2);
+  text('TOUCH TO EXIT', cx, y0 + 9, 1, 'center', 1);
+
+  const [a, b] = Demo.card;
+  const w = Math.min(LW - 2 * T, Math.max(120, Math.max(Font.width(a, 1), Font.width(b, 1)) + 10));
+  const h = 6 + 2 * 9;
+  const top = hintY - 4 - h;
+  winBox(Math.round(cx - w / 2), top, w, h);
+  text(a, cx, top + 4, 1, 'center', 3);
+  text(b, cx, top + 13, 1, 'center', 2);
+
+  // la franja de siempre, pero viva: se enciende el motor que la maquina aprieta
+  drawControlHints(hintY, 2, { left: L && !R, right: R && !L, both: L && R });
 }
 
 function drawHud() {
@@ -2310,10 +2408,11 @@ function activate(label) {
   if (!label) return false;
   Sfx.init(); Sfx.resume(); Sfx.ui();
   if (label === 'MUTE') { Sfx.toggleMute(); return true; }
-  if (label === 'PLAY') { G.attract = false; startGame(false); return true; }
+  if (label === 'PLAY') { G.attract = false; startGame('play'); return true; }
+  if (label === 'DEMO') { Demo.reset(); startGame('demo'); return true; }
   if (label === 'HIGH SCORES') { hs.fromRun = false; screen = SCREEN.SCORES; return true; }
   if (label === 'BACK') { screen = SCREEN.MENU; Input.lastTouch = performance.now(); return true; }
-  if (label === 'PLAY AGAIN') { startGame(false); return true; }
+  if (label === 'PLAY AGAIN') { startGame('play'); return true; }
   if (label === 'MENU') { screen = SCREEN.MENU; Input.lastTouch = performance.now(); return true; }
   return false;
 }
@@ -2333,14 +2432,27 @@ function handleMenuTap(t) {
   return false;
 }
 
-// Cortar el modo demo: se vuelve al menu con el campo limpio.
+// Cortar la demo: se vuelve al menu con el campo limpio. Sirve para las dos, la
+// de fondo y la elegida.
 function quitAttract() {
+  const chosen = G.demo;
   G.attract = false;
-  Sfx.quiet = false;                  // la demo estaba callada; el menu vuelve a sonar
+  G.demo = false;
+  Sfx.quiet = false;                  // la de fondo estaba callada; el menu vuelve a sonar
   G.ship = null; G.entry = false; G.entryT = 0;
   G.meteors.length = 0; G.bullets.length = 0; G.pickups.length = 0;
   G.shards.length = 0; G.rings.length = 0;
   Sfx.engine(false);
+  // el gesto que corto la demo no debe ademas mover la seleccion al soltarlo:
+  // se pidio salir, no navegar
+  Nav.armAfterRelease();
+  if (chosen) {
+    // la elegida ocupaba la pantalla entera: hay que devolver el menu a mano, y
+    // con PLAY marcado, que es lo que uno quiere hacer despues de ver como se juega
+    screen = SCREEN.MENU;
+    Menu.sel = 0;
+    Input.lastTouch = performance.now();
+  }
 }
 
 function updateInitials(nav) {
@@ -2402,11 +2514,14 @@ function frame(now) {
   if (H > W && screen !== SCREEN.ROTATE) { prevScreen = screen; screen = SCREEN.ROTATE; }
   else if (H <= W && screen === SCREEN.ROTATE) { screen = prevScreen; Input.lastTouch = now; }
 
-  if (screen === SCREEN.PLAY) updatePlay(dt * G.timeScale);
-  else if (screen === SCREEN.ROTATE && prevScreen === SCREEN.PLAY) updatePlay(dt * G.timeScale); // no hay pausa (§14)
+  if (screen === SCREEN.PLAY || screen === SCREEN.DEMO) {
+    updatePlay(dt * G.timeScale);
+    if (screen === SCREEN.DEMO) Demo.tick(dt);   // los carteles corren con el reloj de pared, no con el del bullet time
+  }
+  else if (screen === SCREEN.ROTATE && (prevScreen === SCREEN.PLAY || prevScreen === SCREEN.DEMO)) updatePlay(dt * G.timeScale); // no hay pausa (§14)
   else if (screen === SCREEN.MENU) {
     if (G.attract) updatePlay(dt * G.timeScale);
-    else if (now - Input.lastTouch > CFG.attractDelay * 1000) startGame(true);
+    else if (now - Input.lastTouch > CFG.attractDelay * 1000) startGame('attract');
   } else if (screen === SCREEN.INITIALS) updateInitials(nav);
   else if (screen === SCREEN.DEAD) {
     deadHold += dt;
@@ -2419,7 +2534,7 @@ function frame(now) {
   ctx.fillStyle = CFG.bg;
   ctx.fillRect(0, 0, W, H);
 
-  const worldVisible = screen === SCREEN.PLAY || (screen === SCREEN.MENU && G.attract);
+  const worldVisible = screen === SCREEN.PLAY || screen === SCREEN.DEMO || (screen === SCREEN.MENU && G.attract);
   if (worldVisible) renderWorld();
   // el campo congelado queda de fondo, apagandose
   if (screen === SCREEN.DEAD || screen === SCREEN.INITIALS) VRAM.fade(0.05);
@@ -2438,6 +2553,7 @@ function frame(now) {
   // la interfaz se dibuja 1:1 contra el buffer del LCD, en pixeles enteros
   uiBegin();
   if (screen === SCREEN.PLAY) drawHud();
+  else if (screen === SCREEN.DEMO) drawDemo();
   else if (screen === SCREEN.MENU) drawMenu();
   else if (screen === SCREEN.DEAD) drawDead();
   else if (screen === SCREEN.INITIALS) drawInitials();
@@ -2452,7 +2568,7 @@ function frame(now) {
   // Va despues del dibujo porque es el dibujo el que publica las filas.
   if (nav.move || nav.select) {
     Input.lastTouch = now;
-    if (screen === SCREEN.MENU && G.attract) {
+    if (screen === SCREEN.DEMO || (screen === SCREEN.MENU && G.attract)) {
       quitAttract();                     // tocar un motor tambien corta la demo
     } else if (screen === SCREEN.MENU || screen === SCREEN.DEAD || screen === SCREEN.SCORES) {
       if (nav.move && Menu.move(nav.move)) Sfx.ui();
@@ -2464,6 +2580,11 @@ function frame(now) {
   if (tap) {
     if (screen === SCREEN.PLAY) {
       handleHudTap(tap);
+    } else if (screen === SCREEN.DEMO) {
+      // en la demo la nave no es del jugador, asi que la pantalla entera es
+      // "salir": el unico que se salva es el boton de sonido
+      Input.lastTouch = now;
+      if (!handleHudTap(tap)) quitAttract();
     } else if (screen === SCREEN.MENU) {
       Input.lastTouch = now;
       // el boton de sonido gana al toque que corta la demo
