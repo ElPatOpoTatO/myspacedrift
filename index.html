@@ -122,6 +122,11 @@ const CFG = {
   levelStep:     600,
   refillTime:    3.2,            // s en volver a la densidad tras subir de nivel
 
+  // --- navegacion de menus (§4.2) ---
+  chordWait:     0.18,           // s que se espera al segundo dedo antes de dar por hecho que va solo
+  repeatFirst:   0.34,           // s hasta la primera repeticion al mantener un lado
+  repeatNext:    0.11,           // s entre repeticiones
+
   // --- otros ---
   attractDelay:  6.0,            // s de inactividad en el menu antes del modo demo
   maxScores:     10,
@@ -465,6 +470,65 @@ const Input = {
   consumeTap() { const t = this.tapPos; this.tapPos = null; return t; }
 };
 const Key = { left: false, right: false };
+
+/* ========================= navegacion de menus (§4.2) =========================
+   Los menus se manejan con los mismos dos controles que la nave: un lado mueve
+   la seleccion y los dos juntos eligen.
+
+   El problema de leer los flancos sueltos es que dos dedos nunca aterrizan en
+   el mismo milisegundo: el que llega primero se lee como "un lado" y mueve la
+   seleccion, y recien despues se lee "los dos" y elige. Un solo gesto termina
+   haciendo dos cosas.
+
+   Por eso el gesto NO se resuelve mientras haya algo apretado: se acumula
+   quien se toco y se decide al soltar todo. Si en algun momento estuvieron los
+   dos, es elegir y no hubo movimiento. La unica excepcion es mantener un lado
+   apretado mas de chordWait sin el otro: ahi ya no puede ser un acorde, asi
+   que se mueve en el acto y arranca la repeticion.
+   ==================================================================== */
+const Nav = (() => {
+  let open = false, sawBoth = false, dir = 0, age = 0, moved = false, repeat = 0;
+  let blocked = false;
+
+  function reset() { open = false; sawBoth = false; dir = 0; age = 0; moved = false; repeat = 0; }
+
+  // Al cambiar de pantalla hay que soltar todo antes de que la nueva escuche:
+  // si no, morir con los dos motores apretados elegiria solo en GAME OVER.
+  function armAfterRelease() { reset(); blocked = true; }
+
+  // Devuelve { move: -1 | 0 | 1, select: bool } una sola vez por evento.
+  function update(dt) {
+    const L = Input.left, R = Input.right;
+    const out = { move: 0, select: false };
+
+    if (!L && !R) {                       // se solto todo: recien ahora se decide
+      if (blocked) { blocked = false; reset(); return out; }
+      if (open) {
+        if (sawBoth) out.select = true;
+        else if (!moved && dir) out.move = dir;
+      }
+      reset();
+      return out;
+    }
+
+    if (blocked) return out;
+    if (!open) { reset(); open = true; }
+    age += dt;
+    if (L && R) sawBoth = true;
+    else if (!sawBoth) dir = L ? -1 : 1;
+
+    if (sawBoth) return out;              // ya es acorde: solo falta soltar
+    if (!moved && age >= CFG.chordWait) { // mantenido: ya no puede ser acorde
+      out.move = dir; moved = true; repeat = CFG.repeatFirst;
+    } else if (moved) {
+      repeat -= dt;
+      if (repeat <= 0) { out.move = dir; repeat = CFG.repeatNext; }
+    }
+    return out;
+  }
+
+  return { update, armAfterRelease };
+})();
 
 function pos(e) {
   // el dedo llega en px CSS; el juego solo entiende unidades de mundo
@@ -1253,6 +1317,28 @@ function pressed(box) {
 }
 const blink = (ms) => Math.sin(performance.now() / (ms || 250)) > 0;
 
+/* Seleccion del menu. Las filas las publica el dibujo (menuBox) porque son las
+   que cambian por pantalla; la navegacion las lee despues, cuando ya estan. */
+const Menu = {
+  sel: 0,
+  rows: [],
+  _key: '',
+  // Si cambio el juego de opciones, la seleccion vuelve arriba.
+  offer(rows) {
+    const key = rows.join('|');
+    if (key !== this._key) { this._key = key; this.sel = 0; }
+    this.rows = rows;
+  },
+  move(d) {
+    if (this.rows.length < 2) return false;
+    this.sel = (this.sel + d + this.rows.length) % this.rows.length;
+    return true;
+  },
+  chosen() { return this.rows[this.sel]; },
+  // el toque manda: la fila que se toca pasa a ser la elegida
+  syncTo(label) { const i = this.rows.indexOf(label); if (i >= 0) this.sel = i; }
+};
+
 /* ---------------------------- fuente bitmap ----------------------------
    5x7 con avance de 6: es lo que entraba en el tile de 8x8 del hardware,
    con 7 px de alto util. Cada glifo se lee en el codigo como el dibujo que es.
@@ -1399,24 +1485,30 @@ function winBox(x, y, w, h, inverted) {
   ctx.fillRect(x + w - 1, y + 1, 1, h - 2);
 }
 
-// Fila de menu dentro de un cuadro: cursor ▶ parpadeando en la opcion
-// principal, y la fila entera en negativo mientras el dedo la aprieta.
-function menuRow(label, x, y, w, primary) {
+// Fila de menu dentro de un cuadro: cursor ▶ parpadeando en la fila elegida,
+// y la fila entera en negativo mientras el dedo la aprieta.
+function menuRow(label, x, y, w, chosen) {
   const h = 12;
   const box = worldBox(x, y, w, h, label);
   const on = pressed(box);
   if (on) { ctx.fillStyle = TONE[3]; ctx.fillRect(x, y, w, h); }
-  if (primary && !on) text('▶', x + 3, y + 3, 1, 'left', 2 + (blink(320) ? 1 : 0));
+  if (chosen && !on) text('▶', x + 3, y + 3, 1, 'left', 2 + (blink(320) ? 1 : 0));
   text(label, x + w / 2 + 4, y + 3, 1, 'center', on ? 0 : 3);
   G.buttons.push(box);
 }
 
-// Cuadro de menu completo: las filas ya vienen alineadas a la rejilla.
+// Cuadro de menu completo: las filas ya vienen alineadas a la rejilla. Publica
+// sus etiquetas en Menu para que la navegacion con los motores sepa que hay.
 function menuBox(rows, cx, top, w) {
   const h = 6 + rows.length * 12;
   const x = Math.round(cx - w / 2);
+  Menu.offer(rows);
   winBox(x, top, w, h);
-  rows.forEach((r, i) => menuRow(r, x + 2, top + 3 + i * 12, w - 4, i === 0));
+  rows.forEach((r, i) => menuRow(r, x + 2, top + 3 + i * 12, w - 4, i === Menu.sel));
+  // la ayuda solo si hay donde: en records el cuadro ya va pegado abajo
+  if (rows.length > 1 && top + h + 4 + Font.GH <= LH()) {
+    text('L/R — MOVE     BOTH — SELECT', cx, top + h + 4, 1, 'center', 1);
+  }
   return top + h;
 }
 
@@ -1576,44 +1668,53 @@ function handleHudTap(t) {
   return true;
 }
 
+// Lo que hace cada opcion, sin importar si llego por toque o por los motores.
+function activate(label) {
+  if (!label) return false;
+  Sfx.init(); Sfx.resume(); Sfx.ui();
+  if (label === 'MUTE') { Sfx.toggleMute(); return true; }
+  if (label === 'PLAY') { G.attract = false; startGame(false); return true; }
+  if (label === 'HIGH SCORES') { hs.fromRun = false; screen = SCREEN.SCORES; return true; }
+  if (label === 'BACK') { screen = SCREEN.MENU; Input.lastTouch = performance.now(); return true; }
+  if (label === 'PLAY AGAIN') { startGame(false); return true; }
+  if (label === 'MENU') { screen = SCREEN.MENU; Input.lastTouch = performance.now(); return true; }
+  return false;
+}
+
 function handleMenuTap(t) {
   for (const b of G.buttons) {
     if (!hit(b, t)) continue;
-    Sfx.init(); Sfx.resume(); Sfx.ui();
-    if (b.label === 'MUTE') { Sfx.toggleMute(); return true; }
-    if (b.label === 'PLAY') { G.attract = false; startGame(false); return true; }
-    if (b.label === 'HIGH SCORES') { hs.fromRun = false; screen = SCREEN.SCORES; return true; }
-    if (b.label === 'BACK') { screen = SCREEN.MENU; Input.lastTouch = performance.now(); return true; }
-    if (b.label === 'PLAY AGAIN') { startGame(false); return true; }
-    if (b.label === 'MENU') { screen = SCREEN.MENU; Input.lastTouch = performance.now(); return true; }
+    Menu.syncTo(b.label);            // el toque manda: el cursor lo sigue
+    return activate(b.label);
   }
   return false;
 }
 
-function updateInitials(dt) {
-  const inc = (d) => {
-    hs.initials[hs.slot] = (hs.initials[hs.slot] + d + 26) % 26;
+// Cortar el modo demo: se vuelve al menu con el campo limpio.
+function quitAttract() {
+  G.attract = false;
+  G.ship = null;
+  G.meteors.length = 0; G.bullets.length = 0; G.pickups.length = 0;
+  G.shards.length = 0; G.rings.length = 0;
+  Sfx.engine(false);
+}
+
+function updateInitials(nav) {
+  if (nav.move) {
+    hs.initials[hs.slot] = (hs.initials[hs.slot] + nav.move + 26) % 26;
     Sfx.ui();
-  };
-  if (Input.edgeBoth) {
+  }
+  if (nav.select) {
     hs.slot++;
     Sfx.ui(); buzz(15);
     if (hs.slot > 2) { hs.slot = 2; commitInitials(); }
-    hs.holdDir = 0;
-    return;
   }
-  const L = Input.left && !Input.right, R = Input.right && !Input.left;
-  if (Input.edgeLeft && !Input.right)  { inc(-1); hs.holdDir = -1; hs.holdT = 0.34; }
-  if (Input.edgeRight && !Input.left)  { inc(1);  hs.holdDir = 1;  hs.holdT = 0.34; }
-  if ((hs.holdDir === -1 && L) || (hs.holdDir === 1 && R)) {
-    hs.holdT -= dt;
-    if (hs.holdT <= 0) { inc(hs.holdDir); hs.holdT = 0.11; }
-  } else if (!L && !R) hs.holdDir = 0;
 }
 
 /* ============================ loop ============================ */
 let last = performance.now();
 let deadHold = 0;
+let navScreen = null;
 
 function frame(now) {
   let dt = (now - last) / 1000;
@@ -1623,6 +1724,11 @@ function frame(now) {
   Input.update();
   const tap = Input.consumeTap();
   G.buttons = [];
+  Menu.rows = [];                       // las repone el dibujo de esta pantalla
+
+  // Al cambiar de pantalla hay que soltar todo antes de que la nueva escuche
+  if (screen !== navScreen) { navScreen = screen; Nav.armAfterRelease(); }
+  const nav = Nav.update(dt);
 
   // orientacion (§12.7)
   if (H > W && screen !== SCREEN.ROTATE) { prevScreen = screen; screen = SCREEN.ROTATE; }
@@ -1633,7 +1739,7 @@ function frame(now) {
   else if (screen === SCREEN.MENU) {
     if (G.attract) updatePlay(dt * G.timeScale);
     else if (now - Input.lastTouch > CFG.attractDelay * 1000) startGame(true);
-  } else if (screen === SCREEN.INITIALS) updateInitials(dt);
+  } else if (screen === SCREEN.INITIALS) updateInitials(nav);
   else if (screen === SCREEN.DEAD) {
     deadHold += dt;
     if (hs.pending && deadHold > 1.5) { hs.initials = [0, 0, 0]; hs.slot = 0; screen = SCREEN.INITIALS; }
@@ -1674,6 +1780,18 @@ function frame(now) {
   // la escena de baja resolucion pasa por el LCD: paleta, trama y reticula
   LCD.present();
 
+  // ---------- navegacion con los motores ----------
+  // Va despues del dibujo porque es el dibujo el que publica las filas.
+  if (nav.move || nav.select) {
+    Input.lastTouch = now;
+    if (screen === SCREEN.MENU && G.attract) {
+      quitAttract();                     // tocar un motor tambien corta la demo
+    } else if (screen === SCREEN.MENU || screen === SCREEN.DEAD || screen === SCREEN.SCORES) {
+      if (nav.move && Menu.move(nav.move)) Sfx.ui();
+      if (nav.select) { buzz(15); activate(Menu.chosen()); }
+    }
+  }
+
   // ---------- taps de menu ----------
   if (tap) {
     if (screen === SCREEN.PLAY) {
@@ -1681,9 +1799,8 @@ function frame(now) {
     } else if (screen === SCREEN.MENU) {
       Input.lastTouch = now;
       // el boton de sonido gana al toque que corta la demo
-      if (G.attract) {
-        if (!handleHudTap(tap)) { G.attract = false; G.ship = null; G.meteors.length = 0; G.bullets.length = 0; G.pickups.length = 0; G.shards.length = 0; G.rings.length = 0; Sfx.engine(false); }
-      } else handleMenuTap(tap);
+      if (G.attract) { if (!handleHudTap(tap)) quitAttract(); }
+      else handleMenuTap(tap);
     } else if (screen === SCREEN.SCORES || screen === SCREEN.DEAD) {
       handleMenuTap(tap);
     }
