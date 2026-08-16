@@ -9,42 +9,11 @@
  * El repo no tiene package.json a proposito (juego de un solo archivo, cero dependencias),
  * asi que Playwright se resuelve desde donde este instalado, incluido el global de npm.
  */
-import { createRequire } from 'node:module';
-import { execSync } from 'node:child_process';
-import { createServer } from 'node:http';
-import { readFile } from 'node:fs/promises';
-import { fileURLToPath } from 'node:url';
-import { dirname, join, extname } from 'node:path';
+import { serve, playwright, reporter, KNOWN_NOISE } from './harness.mjs';
 
-const require = createRequire(import.meta.url);
-const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
-
-let chromium;
-try {
-  ({ chromium } = require('playwright'));
-} catch {
-  try {
-    ({ chromium } = require(join(execSync('npm root -g').toString().trim(), 'playwright')));
-  } catch {
-    console.error('Falta Playwright. Instalalo con:  npm i -g playwright');
-    process.exit(2);
-  }
-}
-
-/* ---------------------------------------------------------------- servidor */
-// index.html registra un service worker; sobre file:// eso falla y ensucia la consola.
-const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.png': 'image/png',
-               '.webmanifest': 'application/manifest+json' };
-const server = createServer(async (req, res) => {
-  const path = join(ROOT, decodeURIComponent(req.url.split('?')[0]).replace(/^\/+/, '') || 'index.html');
-  try {
-    const body = await readFile(path);
-    res.writeHead(200, { 'Content-Type': MIME[extname(path)] || 'application/octet-stream' });
-    res.end(body);
-  } catch { res.writeHead(404).end('no'); }
-});
-await new Promise(r => server.listen(0, '127.0.0.1', r));
-const BASE = `http://127.0.0.1:${server.address().port}/index.html`;
+const { chromium } = playwright();
+const { server, base } = await serve();
+const BASE = `${base}/index.html`;
 
 /* -------------------------------------------------------------- esperado */
 // Duraciones nominales en segundos, derivadas de las tablas de notas del modulo.
@@ -68,13 +37,7 @@ const MAX_RUN = Math.ceil((SR / (2 * FLOOR_HZ)) * 1.25);
 const browser = await chromium.launch();
 const page = await browser.newPage();
 const pageErrors = [];
-page.on('pageerror', e => {
-  // Fallo previo y ajeno al audio: sw.js responde con index.html a CUALQUIER GET que
-  // falle, incluido el PeerJS de unpkg cuando no hay red, y el navegador intenta parsear
-  // ese HTML como JavaScript. Pasa igual sin estos cambios, asi que no cuenta aqui.
-  const s = String(e);
-  if (!s.includes("Unexpected token '<'")) pageErrors.push(s);
-});
+page.on('pageerror', e => { if (!KNOWN_NOISE(e)) pageErrors.push(String(e)); });
 await page.goto(BASE, { waitUntil: 'load' });
 
 // Se ejecuta dentro de la pagina: renderiza un sonido a PCM y devuelve estadisticas.
@@ -109,11 +72,7 @@ const probe = async (calls, seconds, opts = {}) => page.evaluate(async ([calls, 
 }, [calls, seconds, opts]);
 
 /* ---------------------------------------------------------------- aserciones */
-let failed = 0;
-const check = (name, ok, detail) => {
-  console.log(`${ok ? '  ok  ' : ' FAIL '} ${name}${detail ? '   ' + detail : ''}`);
-  if (!ok) failed++;
-};
+const [res, check] = reporter();
 
 console.log('\nsonidos');
 for (const [name, want] of Object.entries(SOUNDS)) {
@@ -193,5 +152,5 @@ check('la pagina no lanzo errores', pageErrors.length === 0, pageErrors.join(' |
 
 await browser.close();
 server.close();
-console.log(failed ? `\n${failed} fallo(s)\n` : '\ntodo correcto\n');
-process.exit(failed ? 1 : 0);
+console.log(res.failed ? `\n${res.failed} fallo(s)\n` : '\ntodo correcto\n');
+process.exit(res.failed ? 1 : 0);

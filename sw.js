@@ -1,6 +1,6 @@
 // Cache-first: tras la primera carga el juego abre sin internet.
 // Sube el numero de CACHE cada vez que cambies index.html.
-const CACHE = 'my-space-drift-v4';
+const CACHE = 'my-space-drift-v5';
 const FILES = ['./', './index.html', './manifest.webmanifest', './icon-180.png', './icon-512.png'];
 
 self.addEventListener('install', e => {

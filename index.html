@@ -2,24 +2,35 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <meta name="theme-color" content="#050d06">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<!-- black-translucent + viewport-fit=cover: en iOS la pagina ocupa tambien la franja de
+     la barra de estado, en vez de quedar empujada hacia abajo dejando un marco arriba.
+     Lo que queda debajo del notch se descuenta luego con SAFE (ver resize). -->
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="My Space Drift">
 <link rel="apple-touch-icon" href="icon-180.png">
 <link rel="manifest" href="manifest.webmanifest">
 <title>MY SPACE DRIFT</title>
 <style>
   *{margin:0;padding:0;box-sizing:border-box}
-  html,body{width:100%;height:100%;overflow:hidden;background:#050d06;
+  /* dvh = alto visible de verdad. Con 100% o 100vh el movil reserva sitio para barras
+     que en pantalla completa no existen, y lo de abajo quedaba cortado. */
+  html,body{width:100%;height:100vh;height:100dvh;overflow:hidden;background:#050d06;
     -webkit-user-select:none;user-select:none;-webkit-touch-callout:none;
     -webkit-tap-highlight-color:transparent;touch-action:none;overscroll-behavior:none}
   canvas{display:block;width:100%;height:100%;touch-action:none}
 
   /* ---- enlace TV <-> celular ---- */
-  #link-code{position:fixed;left:0;right:0;bottom:16px;z-index:5;text-align:center;
+  /* Sonda para leer los margenes seguros (notch, isla, barra de gestos) desde JS. */
+  #safe{position:fixed;top:0;left:0;width:0;height:0;pointer-events:none;visibility:hidden;
+    padding:env(safe-area-inset-top) env(safe-area-inset-right)
+            env(safe-area-inset-bottom) env(safe-area-inset-left)}
+
+  #link-code{position:fixed;left:0;right:0;z-index:5;text-align:center;
+    bottom:calc(16px + env(safe-area-inset-bottom));
     color:#7dff9b;font:13px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
     letter-spacing:1px;opacity:.8;line-height:1.9;text-transform:uppercase}
   #link-code b{display:block;font-size:34px;letter-spacing:10px;margin-top:2px;font-weight:400}
@@ -47,6 +58,7 @@
 </head>
 <body>
 <canvas id="screen"></canvas>
+<div id="safe"></div>
 <script>
 "use strict";
 
@@ -360,10 +372,25 @@ let gridCv = document.createElement('canvas');
 let gctx = gridCv.getContext('2d');
 let W = 0, H = 0, DPR = 1;
 
+// Margenes seguros del aparato (notch, isla dinamica, barra de gestos). El lienzo llega
+// hasta el borde fisico; solo el HUD se aparta, para no escribir debajo del recorte.
+const SAFE = { t: 0, r: 0, b: 0, l: 0 };
+const safeEl = document.getElementById('safe');
+
 function resize() {
   DPR = Math.min(window.devicePixelRatio || 1, 2);
-  W = Math.max(1, Math.floor(window.innerWidth));
-  H = Math.max(1, Math.floor(window.innerHeight));
+  // visualViewport es lo que se ve de verdad; innerWidth/innerHeight incluyen franjas
+  // que en pantalla completa no estan, y por eso se cortaba la parte de abajo.
+  const vv = window.visualViewport;
+  W = Math.max(1, Math.floor(vv ? vv.width : window.innerWidth));
+  H = Math.max(1, Math.floor(vv ? vv.height : window.innerHeight));
+  if (safeEl) {
+    const s = getComputedStyle(safeEl);
+    SAFE.t = parseFloat(s.paddingTop) || 0;
+    SAFE.r = parseFloat(s.paddingRight) || 0;
+    SAFE.b = parseFloat(s.paddingBottom) || 0;
+    SAFE.l = parseFloat(s.paddingLeft) || 0;
+  }
   for (const c of [cv, trail, gridCv]) { c.width = Math.floor(W * DPR); c.height = Math.floor(H * DPR); }
   cv.style.width = W + 'px'; cv.style.height = H + 'px';
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
@@ -386,6 +413,10 @@ function paintGrid() {
 }
 window.addEventListener('resize', resize);
 window.addEventListener('orientationchange', () => setTimeout(resize, 120));
+if (window.visualViewport) {
+  window.visualViewport.addEventListener('resize', resize);
+  window.visualViewport.addEventListener('scroll', resize);
+}
 
 /* ============================ input (§4) ============================ */
 const Input = {
@@ -417,10 +448,10 @@ function pos(e) {
   return { x: e.clientX - r.left, y: e.clientY - r.top };
 }
 cv.addEventListener('pointerdown', e => {
-  cv.setPointerCapture && cv.setPointerCapture(e.pointerId);
   const p = pos(e);
+  try { cv.setPointerCapture(e.pointerId); } catch (err) {}
   Input.pointers.set(e.pointerId, p);
-  Input.tapPos = p;
+  Input.tapPos = { x: p.x, y: p.y };
   Input.lastTouch = performance.now();
   Sfx.init(); Sfx.resume();
   e.preventDefault();
@@ -432,7 +463,17 @@ function drop(e) { Input.pointers.delete(e.pointerId); }
 cv.addEventListener('pointerup', drop);
 cv.addEventListener('pointercancel', drop);
 cv.addEventListener('pointerleave', drop);
-window.addEventListener('blur', () => Input.pointers.clear());
+cv.addEventListener('lostpointercapture', drop);
+
+// Soltarlo todo cuando la partida deja de estar delante. Antes blur limpiaba los dedos
+// pero no las teclas, y nada limpiaba nada al cambiar de app: se volvia con un control
+// pegado y la unica salida era cerrar la pestaña.
+function releaseAll() {
+  Input.pointers.clear();
+  Key.left = false; Key.right = false;
+}
+window.addEventListener('blur', releaseAll);
+window.addEventListener('pagehide', releaseAll);
 
 // Teclado, util para probar en escritorio
 window.addEventListener('keydown', e => {
@@ -1146,7 +1187,7 @@ function button(label, x, y, w, h, size) {
 function hit(b, t) { return t && t.x >= b.x && t.x <= b.x + b.w && t.y >= b.y && t.y <= b.y + b.h; }
 
 function drawMuteButton() {
-  const x = W - 34, y = 30, r = 12;
+  const x = W - SAFE.r - 34, y = SAFE.t + 30;
   ctx.strokeStyle = CFG.ink; ctx.lineWidth = 1.6;
   ctx.beginPath();
   ctx.moveTo(x - 8, y - 4); ctx.lineTo(x - 4, y - 4); ctx.lineTo(x, y - 9);
@@ -1171,12 +1212,12 @@ function drawMenu() {
   button('HIGH SCORES', W / 2, cy + 66, 190, 40, 15);
   drawControlLines(H - 74, Math.min(13, W * 0.026), 0.55);
   drawMuteButton();
-  if (G.attract) text('DEMO', 34, 30, 13, 'left', 0.5);
+  if (G.attract) text('DEMO', SAFE.l + 34, SAFE.t + 30, 13, 'left', 0.5);
 }
 
 function drawHud() {
-  text('SCORE ' + String(Math.floor(G.score)).padStart(6, '0'), 18, 26, 15, 'left', 0.9);
-  text('LEVEL ' + G.level, W - 18, 26, 15, 'right', 0.9);
+  text('SCORE ' + String(Math.floor(G.score)).padStart(6, '0'), SAFE.l + 18, SAFE.t + 26, 15, 'left', 0.9);
+  text('LEVEL ' + G.level, W - SAFE.r - 18, SAFE.t + 26, 15, 'right', 0.9);
   if (G.levelBanner > 0) {
     const a = clamp(G.levelBanner / 0.35, 0, 1);
     text('LEVEL ' + G.level, W / 2, H / 2, Math.min(64, W * 0.1), 'center', a);
@@ -1572,7 +1613,10 @@ if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
   navigator.serviceWorker.register('sw.js').catch(() => {});   // offline; se ignora si no existe
 }
 Store.load().then(l => { hs.list = l; });
-document.addEventListener('visibilitychange', () => { if (document.hidden) Sfx.engine(false); last = performance.now(); });
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) { Sfx.engine(false); releaseAll(); }
+  last = performance.now();
+});
 window.addEventListener('load', () => Link.start());
 if (!Link.isController) requestAnimationFrame(frame);   // el celular-control no renderiza el juego
 </script>
