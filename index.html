@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<meta name="theme-color" content="#050d06">
+<meta name="theme-color" content="#0f380f">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black">
@@ -13,34 +13,29 @@
 <title>MY SPACE DRIFT</title>
 <style>
   *{margin:0;padding:0;box-sizing:border-box}
-  html,body{width:100%;height:100%;overflow:hidden;background:#050d06;
+  html,body{width:100%;height:100%;overflow:hidden;background:#0f380f;
     -webkit-user-select:none;user-select:none;-webkit-touch-callout:none;
     -webkit-tap-highlight-color:transparent;touch-action:none;overscroll-behavior:none}
-  canvas{display:block;width:100%;height:100%;touch-action:none}
+  canvas{display:block;width:100%;height:100%;touch-action:none;image-rendering:pixelated}
 
-  /* ---- enlace TV <-> celular ---- */
-  #link-code{position:fixed;left:0;right:0;bottom:16px;z-index:5;text-align:center;
-    color:#7dff9b;font:13px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
-    letter-spacing:1px;opacity:.8;line-height:1.9;text-transform:uppercase}
-  #link-code b{display:block;font-size:34px;letter-spacing:10px;margin-top:2px;font-weight:400}
-
-  #ctrl{position:fixed;inset:0;z-index:10;background:#050d06;color:#7dff9b;
+  /* ---- control (celular): DOM puro, no pasa por el shader, se pinta a mano ---- */
+  #ctrl{position:fixed;inset:0;z-index:10;background:#0f380f;color:#9bbc0f;
     font:15px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;letter-spacing:1px;
     display:flex;align-items:center;justify-content:center;flex-direction:column;gap:18px}
   #ctrl h1{font-size:19px;font-weight:400;letter-spacing:5px;opacity:.9}
   #ctrl p{font-size:12px;opacity:.5;text-align:center;padding:0 24px;line-height:1.8}
-  #ctrl input{width:230px;padding:12px;background:transparent;border:1.6px solid #7dff9b;
-    color:#7dff9b;font:32px ui-monospace,Menlo,Consolas,monospace;letter-spacing:10px;
+  #ctrl input{width:230px;padding:12px;background:transparent;border:1.6px solid #8bac0f;
+    color:#9bbc0f;font:32px ui-monospace,Menlo,Consolas,monospace;letter-spacing:10px;
     text-align:center;outline:none;border-radius:0}
   #ctrl input::placeholder{opacity:.25}
-  #ctrl-pad{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:#050d06}
+  #ctrl-pad{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:#0f380f}
   #ctrl-pad .pad{width:100%;max-width:100%;max-height:100%;display:flex;
-    border:1.6px solid rgba(125,255,155,.5)}
+    border:1.6px solid rgba(139,172,15,.6)}
   #ctrl-pad .half{flex:1;display:flex;align-items:center;justify-content:center;
-    font:20px ui-monospace,Menlo,Consolas,monospace;color:rgba(125,255,155,.3);
+    font:20px ui-monospace,Menlo,Consolas,monospace;color:rgba(139,172,15,.35);
     transition:background .05s linear}
-  #ctrl-pad .half:first-child{border-right:1px solid rgba(125,255,155,.25)}
-  #ctrl-pad .half.on{background:rgba(125,255,155,.16);color:#7dff9b}
+  #ctrl-pad .half:first-child{border-right:1px solid rgba(139,172,15,.3)}
+  #ctrl-pad .half.on{background:rgba(155,188,15,.18);color:#9bbc0f}
   #ctrl[hidden],#ctrl-pad[hidden]{display:none}   /* hidden pierde contra display:flex */
 </style>
 <script src="https://unpkg.com/peerjs@1.5.5/dist/peerjs.min.js" defer></script>
@@ -58,12 +53,25 @@
 
 const CFG = {
   // --- pantalla / estetica ---
+  // La escena se dibuja en escala de verde y el shader la cuantiza a la paleta
+  // del Game Boy: lo unico que importa aca es la luminancia relativa.
   bg:            '#050d06',
-  ink:           '#7dff9b',      // verde LCD unico
-  gridSize:      34,             // px de la cuadricula fija
-  gridAlpha:     0.085,
+  ink:           '#ffffff',      // el trazo pleno es el tono mas claro de la paleta
   trailFade:     0.42,           // 0..1 por frame. Mas alto = estela mas corta (§2)
-  scanlineAlpha: 0.05,
+
+  // --- LCD Game Boy (shader, §21) ---
+  // La paleta del hardware son cuatro tonos: blanco, gris claro, gris oscuro y
+  // negro. El verde famoso era el tinte del vidrio, no la paleta del juego, asi
+  // que un juego nativo se disena en estos cuatro y nada mas.
+  gbPalette:     ['#000000', '#545454', '#a8a8a8', '#ffffff'],   // de oscuro a claro
+  lcdRows:       144,            // exactamente las filas de la Game Boy
+  tile:          8,             // la rejilla de 8x8 a la que se alinea toda la interfaz
+  lcdGain:       1.0,            // la escena ya se dibuja en los tonos de la paleta
+  lcdGrid:       0.10,           // fuerza de la reticula de puntos entre celdas (0 = sin reticula)
+  lcdVignette:   0.0,            // sin viñeta: ensucia los tonos planos
+  dither:        0.0,            // sin trama: los bordes tienen que ser duros
+  inkCrush:      0.28,           // por debajo de esto el pixel es fondo: mata el halo del antialias
+                                 // (queda justo por debajo del gris oscuro, 0.33, para no comerselo)
 
   // --- nave (§3) ---
   shipLen:       27,             // largo total (proporcion 3:4 con el ancho)
@@ -148,6 +156,28 @@ const Store = (() => {
   };
 })();
 
+// Igual que los records: si el jugador silencia, tiene que seguir silenciado
+// la proxima vez que abra el juego.
+const Prefs = (() => {
+  const KEY = 'vectordrift:muted';
+  const hasWin = typeof window !== 'undefined' && window.storage && typeof window.storage.get === 'function';
+  return {
+    async loadMuted() {
+      try {
+        if (hasWin) { const r = await window.storage.get(KEY, false); return !!r && r.value === '1'; }
+        return localStorage.getItem(KEY) === '1';
+      } catch (e) { return false; }
+    },
+    saveMuted(m) {
+      const raw = m ? '1' : '0';
+      try {
+        if (hasWin) window.storage.set(KEY, raw, false);
+        else localStorage.setItem(KEY, raw);
+      } catch (e) { /* queda en la sesion */ }
+    }
+  };
+})();
+
 /* ============================ audio (§13) ============================ */
 // Chiptune crudo con osciladores. Nada grabado. El audio nunca es informacion
 // necesaria: todo lo que suena tambien esta en pantalla.
@@ -196,10 +226,15 @@ const Sfx = (() => {
   return {
     init, resume,
     get muted() { return muted; },
-    toggleMute() {
-      muted = !muted;
+    setMuted(m) {                        // aplica sin guardar: lo usa la carga inicial
+      muted = !!m;
       if (master) master.gain.value = muted ? 0 : 0.5;
       if (muted) Sfx.engine(false);
+      return muted;
+    },
+    toggleMute() {
+      Sfx.setMuted(!muted);
+      Prefs.saveMuted(muted);
       return muted;
     },
     engine(on) {
@@ -235,40 +270,161 @@ const Sfx = (() => {
 function buzz(ms) { if (navigator.vibrate) { try { navigator.vibrate(ms); } catch (e) {} } }
 
 /* ============================ canvas ============================ */
+// El juego se dibuja en 'scene', un canvas 2D fuera del DOM y de resolucion
+// baja (CFG.lcdRows filas): los trazos se rasterizan ya del tamano del pixel
+// del LCD. Lo visible es 'cv', el canvas WebGL donde el shader cuantiza esa
+// escena a la paleta del Game Boy y la agranda sin interpolar (§21).
+// Todo el resto del juego sigue midiendo en px CSS (W/H): nada mas cambia.
 const cv = document.getElementById('screen');
-const ctx = cv.getContext('2d');
+const scene = document.createElement('canvas');
+const ctx = scene.getContext('2d');
 let trail = document.createElement('canvas');
 let tctx = trail.getContext('2d');
-let gridCv = document.createElement('canvas');
-let gctx = gridCv.getContext('2d');
-let W = 0, H = 0, DPR = 1;
+let W = 0, H = 0, DPR = 1, PIX = 1;
 
 function resize() {
   DPR = Math.min(window.devicePixelRatio || 1, 2);
   W = Math.max(1, Math.floor(window.innerWidth));
   H = Math.max(1, Math.floor(window.innerHeight));
-  for (const c of [cv, trail, gridCv]) { c.width = Math.floor(W * DPR); c.height = Math.floor(H * DPR); }
+  PIX = clamp(CFG.lcdRows / H, 0.2, 1);            // 1 = pantalla mas chica que el buffer LCD
+  const bw = Math.max(1, Math.round(W * PIX)), bh = Math.max(1, Math.round(H * PIX));
+  for (const c of [scene, trail]) { c.width = bw; c.height = bh; }
+  LW = bw;                                        // el hit-test lo necesita antes del primer frame
+  cv.width = Math.floor(W * DPR); cv.height = Math.floor(H * DPR);
   cv.style.width = W + 'px'; cv.style.height = H + 'px';
-  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
-  tctx.setTransform(DPR, 0, 0, DPR, 0, 0);
-  gctx.setTransform(DPR, 0, 0, DPR, 0, 0);
-  paintGrid();
+  ctx.setTransform(PIX, 0, 0, PIX, 0, 0);
+  tctx.setTransform(PIX, 0, 0, PIX, 0, 0);
   tctx.clearRect(0, 0, W, H);
-}
-function paintGrid() {
-  // Cuadricula fija a la pantalla: es el vidrio del aparato, no el suelo (§2)
-  gctx.clearRect(0, 0, W, H);
-  gctx.strokeStyle = CFG.ink;
-  gctx.globalAlpha = CFG.gridAlpha;
-  gctx.lineWidth = 1;
-  gctx.beginPath();
-  for (let x = 0; x <= W; x += CFG.gridSize) { gctx.moveTo(Math.floor(x) + .5, 0); gctx.lineTo(Math.floor(x) + .5, H); }
-  for (let y = 0; y <= H; y += CFG.gridSize) { gctx.moveTo(0, Math.floor(y) + .5); gctx.lineTo(W, Math.floor(y) + .5); }
-  gctx.stroke();
-  gctx.globalAlpha = 1;
+  LCD.resize();
 }
 window.addEventListener('resize', resize);
 window.addEventListener('orientationchange', () => setTimeout(resize, 120));
+
+/* ======================= shader LCD Game Boy (§21) =======================
+   Un solo paso de post-proceso sobre la escena:
+   muestreo al centro de cada celda -> luminancia -> corte del borde suave ->
+   cuantizacion a los 4 tonos del hardware -> reticula de puntos.
+   El corte (inkCrush) es lo que hace que el juego se vea nativo: el canvas no
+   deja apagar el antialias de los trazos, asi que el halo tenue que deja
+   alrededor de cada linea se manda a negro en vez de volverse un gris.
+   ==================================================================== */
+const LCD = (() => {
+  const VERT = `
+    attribute vec2 p;
+    varying vec2 uv;
+    void main() {
+      uv = p * 0.5 + 0.5;
+      uv.y = 1.0 - uv.y;          // fila 0 de la textura = arriba de la pantalla
+      gl_Position = vec4(p, 0.0, 1.0);
+    }`;
+
+  const FRAG = `
+    precision mediump float;
+    varying vec2 uv;
+    uniform sampler2D src;
+    uniform vec2  lcd;            // celdas del LCD (ancho, alto)
+    uniform vec3  pal[4];         // paleta, de oscuro a claro
+    uniform float gridK, gap, ditherK, gain, crush;
+
+    float bayer2(vec2 a) { a = floor(a); return fract(a.x * 0.5 + a.y * a.y * 0.75); }
+    float bayer4(vec2 a) { return bayer2(a * 0.5) * 0.25 + bayer2(a); }   // 16 niveles, 0..0.9375
+
+    void main() {
+      vec2 cell = floor(uv * lcd);
+      vec3 s = texture2D(src, (cell + 0.5) / lcd).rgb;
+      float lum = clamp(dot(s, vec3(0.299, 0.587, 0.114)) * gain, 0.0, 1.0);
+
+      // el halo del antialias no llega a ser un tono: es fondo
+      lum = lum < crush ? 0.0 : lum;
+
+      float d = bayer4(cell) * ditherK + (1.0 - ditherK) * 0.5;   // ditherK 0 = redondeo seco
+      float q = clamp(floor(lum * 3.0 + d), 0.0, 3.0);
+
+      // reticula: en el hueco entre celdas el punto cae un tono, como en el
+      // dot matrix de verdad. Baja un escalon entero para no inventar colores
+      // fuera de la paleta.
+      vec2 f = fract(uv * lcd);
+      vec2 e = min(f, 1.0 - f);
+      if (gridK > 0.5 && min(e.x, e.y) < gap) q = max(q - 1.0, 0.0);
+
+      gl_FragColor = vec4(q < 0.5 ? pal[0] : (q < 1.5 ? pal[1] : (q < 2.5 ? pal[2] : pal[3])), 1.0);
+    }`;
+
+  let gl = null, prog = null, tex = null, fb = null, U = {};
+
+  const hexRgb = h => [1, 3, 5].map(i => parseInt(h.substr(i, 2), 16) / 255);
+
+  function compile(type, srcTxt) {
+    const s = gl.createShader(type);
+    gl.shaderSource(s, srcTxt);
+    gl.compileShader(s);
+    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s));
+    return s;
+  }
+
+  function build() {
+    prog = gl.createProgram();
+    gl.attachShader(prog, compile(gl.VERTEX_SHADER, VERT));
+    gl.attachShader(prog, compile(gl.FRAGMENT_SHADER, FRAG));
+    gl.bindAttribLocation(prog, 0, 'p');
+    gl.linkProgram(prog);
+    if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog));
+    gl.useProgram(prog);
+
+    const buf = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);  // triangulo que tapa la pantalla
+    gl.enableVertexAttribArray(0);
+    gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+
+    tex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    for (const p of [gl.TEXTURE_MIN_FILTER, gl.TEXTURE_MAG_FILTER]) gl.texParameteri(gl.TEXTURE_2D, p, gl.NEAREST);
+    for (const p of [gl.TEXTURE_WRAP_S, gl.TEXTURE_WRAP_T]) gl.texParameteri(gl.TEXTURE_2D, p, gl.CLAMP_TO_EDGE);
+
+    for (const n of ['src', 'lcd', 'gridK', 'gap', 'ditherK', 'gain', 'crush']) U[n] = gl.getUniformLocation(prog, n);
+    gl.uniform1i(U.src, 0);
+    gl.uniform1f(U.gridK, CFG.lcdGrid);
+    gl.uniform1f(U.ditherK, CFG.dither);
+    gl.uniform1f(U.gain, CFG.lcdGain);
+    gl.uniform1f(U.crush, CFG.inkCrush);
+    CFG.gbPalette.forEach((h, i) => gl.uniform3fv(gl.getUniformLocation(prog, 'pal[' + i + ']'), hexRgb(h)));
+  }
+
+  try {
+    gl = cv.getContext('webgl', { alpha: false, antialias: false, depth: false, stencil: false })
+      || cv.getContext('experimental-webgl', { alpha: false, antialias: false });
+    if (gl) build();
+  } catch (e) { gl = null; }
+
+  // Sin WebGL el juego no se queda en negro: se copia la escena sin interpolar.
+  // Se pierde la paleta, no el pixelado ni el juego.
+  if (!gl) fb = cv.getContext('2d');
+
+  return {
+    get ok() { return !!gl; },
+    resize() {
+      if (gl) gl.viewport(0, 0, cv.width, cv.height);
+      else if (fb) fb.imageSmoothingEnabled = false;
+    },
+    present() {
+      if (!gl) {
+        if (!fb) return;
+        fb.imageSmoothingEnabled = false;
+        fb.clearRect(0, 0, cv.width, cv.height);
+        fb.drawImage(scene, 0, 0, cv.width, cv.height);
+        return;
+      }
+      gl.bindTexture(gl.TEXTURE_2D, tex);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, scene);
+      gl.uniform2f(U.lcd, scene.width, scene.height);
+      // el hueco de la reticula es medio pixel de pantalla, en fraccion de celda
+      const cellPx = Math.max(1, cv.width) / scene.width;
+      gl.uniform1f(U.gap, clamp(0.5 / cellPx, 0.04, 0.12));
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+    }
+  };
+})();
 
 /* ============================ input (§4) ============================ */
 const Input = {
@@ -281,7 +437,8 @@ const Input = {
 
   update() {
     let l = false, r = false;
-    for (const p of this.pointers.values()) { if (p.x < W / 2) l = true; else r = true; }
+    // los dedos apoyados sobre un boton de la interfaz no son motor (§13.2)
+    for (const p of this.pointers.values()) { if (p.ui) continue; if (p.x < W / 2) l = true; else r = true; }
     if (Key.left) l = true;
     if (Key.right) r = true;
     this.left = l; this.right = r;
@@ -302,6 +459,8 @@ function pos(e) {
 cv.addEventListener('pointerdown', e => {
   cv.setPointerCapture && cv.setPointerCapture(e.pointerId);
   const p = pos(e);
+  // se decide aca, no en el frame: el dedo queda marcado mientras siga apoyado
+  if (muteActive() && hit(muteBox(), p)) p.ui = true;
   Input.pointers.set(e.pointerId, p);
   Input.tapPos = p;
   Input.lastTouch = performance.now();
@@ -309,7 +468,11 @@ cv.addEventListener('pointerdown', e => {
   e.preventDefault();
 }, { passive: false });
 cv.addEventListener('pointermove', e => {
-  if (Input.pointers.has(e.pointerId)) Input.pointers.set(e.pointerId, pos(e));
+  const old = Input.pointers.get(e.pointerId);
+  if (!old) return;
+  const p = pos(e);
+  if (old.ui) p.ui = true;          // moverse un pixel no convierte el boton en motor
+  Input.pointers.set(e.pointerId, p);
 }, { passive: false });
 function drop(e) { Input.pointers.delete(e.pointerId); }
 cv.addEventListener('pointerup', drop);
@@ -858,10 +1021,13 @@ async function commitInitials() {
 }
 
 /* ============================ dibujo ============================ */
+// 'w' va en PIXELES DE LCD, no en px CSS: un 1 es un punto de la pantalla de
+// Game Boy. Antes eran px CSS y a esta densidad 1.6 px CSS daban medio punto,
+// que es exactamente el gris sucio del antialias que habia que sacar.
 function stroke(c, w, alpha) {
-  c.strokeStyle = CFG.ink; c.lineWidth = w || 1.6;
+  c.strokeStyle = CFG.ink; c.lineWidth = (w || 1) / PIX;
   c.globalAlpha = alpha === undefined ? 1 : alpha;
-  c.lineJoin = 'round'; c.lineCap = 'round';
+  c.lineJoin = 'miter'; c.lineCap = 'butt';   // las puntas redondas son medio punto encendido
 }
 function drawPoly(c, pts, x, y, a, close) {
   const ca = Math.cos(a), sa = Math.sin(a);
@@ -883,8 +1049,8 @@ function drawShip(c, s, x, y) {
     if (s.invuln < CFG.invulnBlink) alpha = (Math.sin(s.invuln * 26) > 0) ? 0.5 : 0.08;
   } else if (s.grace > 0 && Math.sin(s.grace * 30) > 0) alpha = 0.35;
 
-  stroke(c, 1.9, alpha);
-  if (shielded) c.setLineDash([3.5, 3.5]);          // contorno punteado
+  stroke(c, 1, alpha);
+  if (shielded) c.setLineDash([2 / PIX, 2 / PIX]);  // contorno punteado, en puntos de LCD
   c.beginPath();
   SHIP_SEGS.forEach((seg, i) => {
     if (s.damaged && DAMAGED_HIDE.includes(i)) return;   // dano visible permanente (§3)
@@ -920,7 +1086,7 @@ function drawShip(c, s, x, y) {
     { x: L2 + rnd(4, 9), y: side * 4.5 },
     { x: L2 * 0.42, y: side * 6 }
   ]);
-  stroke(c, 1.4, alpha * 0.9);
+  stroke(c, 1, alpha * 0.9);
   const braking = s.left && s.right;
   if (braking) { retro(-1); retro(1); }
   else {
@@ -949,7 +1115,7 @@ function drawPickup(c, p) {
     }
     c.closePath(); c.stroke();
   };
-  stroke(c, 1.8, 1);
+  stroke(c, 1, 1);
   ring(R);
   if (repair) {
     // cruz interior: la marca de reparacion
@@ -964,10 +1130,10 @@ function drawPickup(c, p) {
     const ph = ((p.t * 0.75) + k / 3) % 1;
     if (repair) {
       // ondas que entran hacia adentro: absorbe, no irradia
-      stroke(c, 1.2, ph * 0.6);
+      stroke(c, 1, ph * 0.6);
       c.beginPath(); c.arc(p.x, p.y, R * (0.6 + (1 - ph) * 2.0), 0, TAU); c.stroke();
     } else {
-      stroke(c, 1.2, (1 - ph) * 0.55);
+      stroke(c, 1, (1 - ph) * 0.55);
       c.beginPath(); c.arc(p.x, p.y, R * (0.5 + ph * 1.9), 0, TAU); c.stroke();
     }
   }
@@ -982,23 +1148,23 @@ function renderWorld() {
   tctx.globalCompositeOperation = 'source-over';
 
   const c = tctx;
-  for (const m of G.meteors) { stroke(c, 1.6, 1); drawPoly(c, m.pts, m.x, m.y, m.a, true); }
+  for (const m of G.meteors) { stroke(c, 1, 1); drawPoly(c, m.pts, m.x, m.y, m.a, true); }
   for (const b of G.bullets) {
-    stroke(c, 2.2, 1);
+    stroke(c, 2, 1);
     c.beginPath(); c.moveTo(b.x, b.y);
     c.lineTo(b.x - b.vx * 0.012, b.y - b.vy * 0.012); c.stroke();
   }
   for (const p of G.pickups) drawPickup(c, p);
   for (const d of G.shards) {
     const ca = Math.cos(d.a), sa = Math.sin(d.a);
-    stroke(c, 1.5, clamp(d.life / d.max, 0, 1));
+    stroke(c, 1, clamp(d.life / d.max, 0, 1));
     c.beginPath();
     c.moveTo(d.x + d.ax * ca - d.ay * sa, d.y + d.ax * sa + d.ay * ca);
     c.lineTo(d.x + d.bx * ca - d.by * sa, d.y + d.bx * sa + d.by * ca);
     c.stroke();
   }
   for (const r of G.rings) {
-    stroke(c, 1.4, clamp(r.life / r.max, 0, 1) * 0.8);
+    stroke(c, 1, clamp(r.life / r.max, 0, 1) * 0.8);
     c.beginPath(); c.arc(r.x, r.y, r.r, 0, TAU); c.stroke();
   }
   const s = G.ship;
@@ -1006,132 +1172,358 @@ function renderWorld() {
   c.globalAlpha = 1;
 }
 
-/* ============================ UI ============================ */
-function text(str, x, y, size, align, alpha) {
-  ctx.fillStyle = CFG.ink;
-  ctx.globalAlpha = alpha === undefined ? 1 : alpha;
-  ctx.font = size + 'px ui-monospace, SFMono-Regular, Menlo, Consolas, "Courier New", monospace';
-  ctx.textAlign = align || 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(str, x, y);
-  ctx.globalAlpha = 1;
+/* ======================= UI: pixel de Game Boy (§22) =======================
+   Nada de esto usa la fuente del sistema ni trazos: cada punto es un fillRect
+   sobre coordenadas enteras del LCD, que es la unica forma de que no haya
+   antialias. La interfaz se dibuja con el transform en 1:1 contra el buffer
+   del LCD (uiBegin), asi que aca 1 unidad = 1 pixel de Game Boy y todo cae
+   sobre la rejilla de 8 px del hardware.
+   ==================================================================== */
+const TONE = CFG.gbPalette;                    // 0 negro .. 3 blanco
+const T = CFG.tile;
+let LW = 160;                                  // ancho de la pantalla en pixeles de LCD
+const LH = () => scene.height;                 // alto: siempre CFG.lcdRows
+
+function uiBegin() { ctx.setTransform(1, 0, 0, 1, 0, 0); LW = scene.width; }
+function uiEnd()   { ctx.setTransform(PIX, 0, 0, PIX, 0, 0); }
+
+// Los botones se guardan en px CSS porque los toques llegan en px CSS.
+function cssBox(x, y, w, h, label) {
+  return { x: x / PIX, y: y / PIX, w: w / PIX, h: h / PIX, label };
 }
-function button(label, x, y, w, h, size) {
-  ctx.strokeStyle = CFG.ink; ctx.lineWidth = 1.6; ctx.globalAlpha = 0.9;
-  ctx.strokeRect(x - w / 2, y - h / 2, w, h);
-  ctx.globalAlpha = 1;
-  text(label, x, y + 1, size || 18);
-  const b = { x: x - w / 2, y: y - h / 2, w, h, label };
-  G.buttons.push(b);
-  return b;
-}
+function pushBtn(label, x, y, w, h) { G.buttons.push(cssBox(x, y, w, h, label)); }
 function hit(b, t) { return t && t.x >= b.x && t.x <= b.x + b.w && t.y >= b.y && t.y <= b.y + b.h; }
+// Un boton esta "apretado" mientras haya un dedo encima: es el estado
+// resaltado de los menus de la Game Boy y ademas da respuesta al toque.
+function pressed(box) {
+  for (const p of Input.pointers.values()) if (hit(box, p)) return true;
+  return false;
+}
+const blink = (ms) => Math.sin(performance.now() / (ms || 250)) > 0;
 
+/* ---------------------------- fuente bitmap ----------------------------
+   5x7 con avance de 6: es lo que entraba en el tile de 8x8 del hardware,
+   con 7 px de alto util. Cada glifo se lee en el codigo como el dibujo que es.
+   Las minusculas hacen falta de verdad: la URL de emparejamiento lleva una
+   ruta sensible a mayusculas y en mayusculas daria 404 al tipearla.
+   -------------------------------------------------------------------- */
+const Font = (() => {
+  const G = {
+    ' ': [0, 0, 0, 0, 0, 0, 0],
+    A: [0b01110, 0b10001, 0b10001, 0b11111, 0b10001, 0b10001, 0b10001],
+    B: [0b11110, 0b10001, 0b10001, 0b11110, 0b10001, 0b10001, 0b11110],
+    C: [0b01110, 0b10001, 0b10000, 0b10000, 0b10000, 0b10001, 0b01110],
+    D: [0b11110, 0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b11110],
+    E: [0b11111, 0b10000, 0b10000, 0b11110, 0b10000, 0b10000, 0b11111],
+    F: [0b11111, 0b10000, 0b10000, 0b11110, 0b10000, 0b10000, 0b10000],
+    G: [0b01110, 0b10001, 0b10000, 0b10111, 0b10001, 0b10001, 0b01111],
+    H: [0b10001, 0b10001, 0b10001, 0b11111, 0b10001, 0b10001, 0b10001],
+    I: [0b01110, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100, 0b01110],
+    J: [0b00111, 0b00010, 0b00010, 0b00010, 0b00010, 0b10010, 0b01100],
+    K: [0b10001, 0b10010, 0b10100, 0b11000, 0b10100, 0b10010, 0b10001],
+    L: [0b10000, 0b10000, 0b10000, 0b10000, 0b10000, 0b10000, 0b11111],
+    M: [0b10001, 0b11011, 0b10101, 0b10101, 0b10001, 0b10001, 0b10001],
+    N: [0b10001, 0b11001, 0b10101, 0b10011, 0b10001, 0b10001, 0b10001],
+    O: [0b01110, 0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b01110],
+    P: [0b11110, 0b10001, 0b10001, 0b11110, 0b10000, 0b10000, 0b10000],
+    Q: [0b01110, 0b10001, 0b10001, 0b10001, 0b10101, 0b10010, 0b01101],
+    R: [0b11110, 0b10001, 0b10001, 0b11110, 0b10100, 0b10010, 0b10001],
+    S: [0b01111, 0b10000, 0b10000, 0b01110, 0b00001, 0b00001, 0b11110],
+    T: [0b11111, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100],
+    U: [0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b01110],
+    V: [0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b01010, 0b00100],
+    W: [0b10001, 0b10001, 0b10001, 0b10101, 0b10101, 0b11011, 0b10001],
+    X: [0b10001, 0b10001, 0b01010, 0b00100, 0b01010, 0b10001, 0b10001],
+    Y: [0b10001, 0b10001, 0b01010, 0b00100, 0b00100, 0b00100, 0b00100],
+    Z: [0b11111, 0b00001, 0b00010, 0b00100, 0b01000, 0b10000, 0b11111],
+    a: [0b00000, 0b00000, 0b01110, 0b00001, 0b01111, 0b10001, 0b01111],
+    b: [0b10000, 0b10000, 0b11110, 0b10001, 0b10001, 0b10001, 0b11110],
+    c: [0b00000, 0b00000, 0b01111, 0b10000, 0b10000, 0b10000, 0b01111],
+    d: [0b00001, 0b00001, 0b01111, 0b10001, 0b10001, 0b10001, 0b01111],
+    e: [0b00000, 0b00000, 0b01110, 0b10001, 0b11111, 0b10000, 0b01110],
+    f: [0b00110, 0b01001, 0b01000, 0b11100, 0b01000, 0b01000, 0b01000],
+    g: [0b00000, 0b01111, 0b10001, 0b10001, 0b01111, 0b00001, 0b01110],
+    h: [0b10000, 0b10000, 0b11110, 0b10001, 0b10001, 0b10001, 0b10001],
+    i: [0b00100, 0b00000, 0b01100, 0b00100, 0b00100, 0b00100, 0b01110],
+    j: [0b00010, 0b00000, 0b00110, 0b00010, 0b00010, 0b10010, 0b01100],
+    k: [0b10000, 0b10000, 0b10010, 0b10100, 0b11000, 0b10100, 0b10010],
+    l: [0b01100, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100, 0b01110],
+    m: [0b00000, 0b00000, 0b11010, 0b10101, 0b10101, 0b10101, 0b10101],
+    n: [0b00000, 0b00000, 0b11110, 0b10001, 0b10001, 0b10001, 0b10001],
+    o: [0b00000, 0b00000, 0b01110, 0b10001, 0b10001, 0b10001, 0b01110],
+    p: [0b00000, 0b11110, 0b10001, 0b10001, 0b11110, 0b10000, 0b10000],
+    q: [0b00000, 0b01111, 0b10001, 0b10001, 0b01111, 0b00001, 0b00001],
+    r: [0b00000, 0b00000, 0b10110, 0b11001, 0b10000, 0b10000, 0b10000],
+    s: [0b00000, 0b00000, 0b01111, 0b10000, 0b01110, 0b00001, 0b11110],
+    t: [0b01000, 0b01000, 0b11100, 0b01000, 0b01000, 0b01001, 0b00110],
+    u: [0b00000, 0b00000, 0b10001, 0b10001, 0b10001, 0b10011, 0b01101],
+    v: [0b00000, 0b00000, 0b10001, 0b10001, 0b10001, 0b01010, 0b00100],
+    w: [0b00000, 0b00000, 0b10001, 0b10001, 0b10101, 0b10101, 0b01010],
+    x: [0b00000, 0b00000, 0b10001, 0b01010, 0b00100, 0b01010, 0b10001],
+    y: [0b00000, 0b10001, 0b10001, 0b10001, 0b01111, 0b00001, 0b01110],
+    z: [0b00000, 0b00000, 0b11111, 0b00010, 0b00100, 0b01000, 0b11111],
+    0: [0b01110, 0b10001, 0b10011, 0b10101, 0b11001, 0b10001, 0b01110],
+    1: [0b00100, 0b01100, 0b00100, 0b00100, 0b00100, 0b00100, 0b01110],
+    2: [0b01110, 0b10001, 0b00001, 0b00010, 0b00100, 0b01000, 0b11111],
+    3: [0b11111, 0b00010, 0b00100, 0b00010, 0b00001, 0b10001, 0b01110],
+    4: [0b00010, 0b00110, 0b01010, 0b10010, 0b11111, 0b00010, 0b00010],
+    5: [0b11111, 0b10000, 0b11110, 0b00001, 0b00001, 0b10001, 0b01110],
+    6: [0b00110, 0b01000, 0b10000, 0b11110, 0b10001, 0b10001, 0b01110],
+    7: [0b11111, 0b00001, 0b00010, 0b00100, 0b01000, 0b01000, 0b01000],
+    8: [0b01110, 0b10001, 0b10001, 0b01110, 0b10001, 0b10001, 0b01110],
+    9: [0b01110, 0b10001, 0b10001, 0b01111, 0b00001, 0b00010, 0b01100],
+    '-': [0b00000, 0b00000, 0b00000, 0b11111, 0b00000, 0b00000, 0b00000],
+    '—': [0b00000, 0b00000, 0b00000, 0b11111, 0b00000, 0b00000, 0b00000],
+    '.': [0b00000, 0b00000, 0b00000, 0b00000, 0b00000, 0b00000, 0b00100],
+    ',': [0b00000, 0b00000, 0b00000, 0b00000, 0b00000, 0b00100, 0b01000],
+    ':': [0b00000, 0b00100, 0b00000, 0b00000, 0b00000, 0b00100, 0b00000],
+    '/': [0b00001, 0b00010, 0b00010, 0b00100, 0b01000, 0b01000, 0b10000],
+    '?': [0b01110, 0b10001, 0b00001, 0b00010, 0b00100, 0b00000, 0b00100],
+    '!': [0b00100, 0b00100, 0b00100, 0b00100, 0b00100, 0b00000, 0b00100],
+    '+': [0b00000, 0b00100, 0b00100, 0b11111, 0b00100, 0b00100, 0b00000],
+    '=': [0b00000, 0b00000, 0b11111, 0b00000, 0b11111, 0b00000, 0b00000],
+    '_': [0b00000, 0b00000, 0b00000, 0b00000, 0b00000, 0b00000, 0b11111],
+    '#': [0b01010, 0b01010, 0b11111, 0b01010, 0b11111, 0b01010, 0b01010],
+    '(': [0b00010, 0b00100, 0b01000, 0b01000, 0b01000, 0b00100, 0b00010],
+    ')': [0b01000, 0b00100, 0b00010, 0b00010, 0b00010, 0b00100, 0b01000],
+    '×': [0b00000, 0b10001, 0b01010, 0b00100, 0b01010, 0b10001, 0b00000],
+    '→': [0b00000, 0b00100, 0b00010, 0b11111, 0b00010, 0b00100, 0b00000],
+    '▶': [0b10000, 0b11000, 0b11100, 0b11110, 0b11100, 0b11000, 0b10000],
+    '▲': [0b00100, 0b00100, 0b01110, 0b01110, 0b11111, 0b11111, 0b00000],
+    '▼': [0b00000, 0b11111, 0b11111, 0b01110, 0b01110, 0b00100, 0b00100],
+  };
+  const ADV = 6, GW = 5, GH = 7;
+  const width = (str, s) => Math.max(0, str.length * ADV - 1) * (s || 1);
+
+  // x,y son la esquina superior izquierda del primer glifo (o el borde que
+  // marque align). Todo entero: sin medios pixeles no hay borde suave.
+  function draw(str, x, y, s, align, color) {
+    s = Math.max(1, Math.round(s || 1));
+    let px = Math.round(x);
+    if (align === 'center') px = Math.round(x - width(str, s) / 2);
+    else if (align === 'right') px = Math.round(x - width(str, s));
+    const py = Math.round(y);
+    ctx.fillStyle = color || TONE[3];
+    for (const ch of str) {
+      const g = G[ch] || G[ch.toUpperCase()];
+      if (g) {
+        for (let r = 0; r < GH; r++) {
+          const bits = g[r];
+          if (!bits) continue;
+          // corridas horizontales: un fillRect por tramo, no uno por punto
+          let run = 0;
+          for (let c = 0; c <= GW; c++) {
+            const on = c < GW && (bits >> (GW - 1 - c)) & 1;
+            if (on) run++;
+            else if (run) {
+              ctx.fillRect(px + (c - run) * s, py + r * s, run * s, s);
+              run = 0;
+            }
+          }
+        }
+      }
+      px += ADV * s;
+    }
+  }
+  return { draw, width, GH, ADV };
+})();
+
+// Texto de interfaz. 'tone' es el indice de la paleta: asi se apagaba el texto
+// secundario en la Game Boy, con un gris de verdad y no con transparencia.
+function text(str, x, y, s, align, tone) {
+  Font.draw(str, x, y, s, align, TONE[tone === undefined ? 3 : tone]);
+}
+
+/* --------------------------- marcos y botones --------------------------- */
+// Cuadro de dialogo (la "window" del hardware): relleno liso, borde de 1 px y
+// esquinas recortadas, que es como se arma con tiles.
+function winBox(x, y, w, h, inverted) {
+  ctx.fillStyle = inverted ? TONE[3] : TONE[0];
+  ctx.fillRect(x, y, w, h);
+  ctx.fillStyle = inverted ? TONE[0] : TONE[3];
+  ctx.fillRect(x + 1, y, w - 2, 1);
+  ctx.fillRect(x + 1, y + h - 1, w - 2, 1);
+  ctx.fillRect(x, y + 1, 1, h - 2);
+  ctx.fillRect(x + w - 1, y + 1, 1, h - 2);
+}
+
+// Fila de menu dentro de un cuadro: cursor ▶ parpadeando en la opcion
+// principal, y la fila entera en negativo mientras el dedo la aprieta.
+function menuRow(label, x, y, w, primary) {
+  const h = 12;
+  const box = cssBox(x, y, w, h, label);
+  const on = pressed(box);
+  if (on) { ctx.fillStyle = TONE[3]; ctx.fillRect(x, y, w, h); }
+  if (primary && !on) text('▶', x + 3, y + 3, 1, 'left', 2 + (blink(320) ? 1 : 0));
+  text(label, x + w / 2 + 4, y + 3, 1, 'center', on ? 0 : 3);
+  G.buttons.push(box);
+}
+
+// Cuadro de menu completo: las filas ya vienen alineadas a la rejilla.
+function menuBox(rows, cx, top, w) {
+  const h = 6 + rows.length * 12;
+  const x = Math.round(cx - w / 2);
+  winBox(x, top, w, h);
+  rows.forEach((r, i) => menuRow(r, x + 2, top + 3 + i * 12, w - 4, i === 0));
+  return top + h;
+}
+
+/* ------------------------------- iconos -------------------------------- */
+// 8x8, como los objetos del hardware. Se dibujan igual que la fuente.
+const ICON = {
+  //        ...#....    ..##....    .###.#..    .###..#.
+  sound: [0b00010000, 0b00110000, 0b01110100, 0b01110010, 0b01110010, 0b01110100, 0b00110000, 0b00010000],
+  mute:  [0b00010000, 0b00110000, 0b01110000, 0b01110101, 0b01110010, 0b01110101, 0b00110000, 0b00010000],
+};
+function icon(bits, x, y, s, tone) {
+  ctx.fillStyle = TONE[tone === undefined ? 3 : tone];
+  for (let r = 0; r < 8; r++) {
+    let run = 0;
+    for (let c = 0; c <= 8; c++) {
+      const on = c < 8 && (bits[r] >> (7 - c)) & 1;
+      if (on) run++;
+      else if (run) { ctx.fillRect(x + (c - run) * s, y + r * s, run * s, s); run = 0; }
+    }
+  }
+}
+
+/* ---------------------------- boton de sonido ---------------------------
+   Vive arriba a la derecha en todas las pantallas donde existe. La caja se
+   comparte con el pointerdown: durante el juego el dedo que lo aprieta no
+   debe encender el motor (§13.2), por eso el area de toque es mas grande que
+   el icono y se calcula en un solo lugar.
+   -------------------------------------------------------------------- */
+const MUTE_SCALE = 2;
+const muteIcon = () => ({ x: LW - 2 * T - 4, y: 4, s: MUTE_SCALE });
+function muteBox() {
+  const m = muteIcon(), pad = 5;
+  return cssBox(m.x - pad, m.y - pad, 8 * m.s + 2 * pad, 8 * m.s + 2 * pad, 'MUTE');
+}
+function muteActive() {
+  return screen === SCREEN.PLAY || screen === SCREEN.MENU
+      || screen === SCREEN.DEAD || screen === SCREEN.SCORES;
+}
 function drawMuteButton() {
-  const x = W - 34, y = 30, r = 12;
-  ctx.strokeStyle = CFG.ink; ctx.lineWidth = 1.6;
-  ctx.beginPath();
-  ctx.moveTo(x - 8, y - 4); ctx.lineTo(x - 4, y - 4); ctx.lineTo(x, y - 9);
-  ctx.lineTo(x, y + 9); ctx.lineTo(x - 4, y + 4); ctx.lineTo(x - 8, y + 4);
-  ctx.closePath(); ctx.stroke();
-  ctx.beginPath();
-  if (Sfx.muted) { ctx.moveTo(x + 4, y - 6); ctx.lineTo(x + 12, y + 6); ctx.moveTo(x + 12, y - 6); ctx.lineTo(x + 4, y + 6); }
-  else { ctx.arc(x + 4, y, 6, -0.9, 0.9); ctx.moveTo(x + 13, y - 6); ctx.arc(x + 4, y, 10, -0.7, 0.7); }
-  ctx.stroke();
-  G.buttons.push({ x: x - 26, y: y - 22, w: 52, h: 44, label: 'MUTE' });
-}
-function drawControlLines(y, size, alpha) {
-  const lines = ['LEFT SIDE — LEFT THRUSTER', 'RIGHT SIDE — RIGHT THRUSTER', 'BOTH SIDES — BRAKE'];
-  lines.forEach((l, i) => text(l, W / 2, y + i * (size * 1.5), size, 'center', alpha));
+  const m = muteIcon();
+  icon(Sfx.muted ? ICON.mute : ICON.sound, m.x, m.y, m.s, Sfx.muted ? 2 : 3);
+  G.buttons.push(muteBox());
 }
 
+/* ------------------------------ ayudas fijas ---------------------------- */
+function drawControlLines(bottom, tone) {
+  const lines = ['LEFT SIDE - LEFT THRUSTER', 'RIGHT SIDE - RIGHT THRUSTER', 'BOTH SIDES - BRAKE'];
+  lines.forEach((l, i) => text(l, LW / 2, bottom - (lines.length - i) * T, 1, 'center', tone === undefined ? 1 : tone));
+}
+
+// Codigo de emparejamiento del celular. SOLO en las pantallas quietas: durante
+// la partida no se dibuja nada (§20.2). Cada pantalla elige donde ponerlo, que
+// el sitio libre no es el mismo en todas.
+function drawLinkCode(x, y, s, align) {
+  const st = Link.status();
+  align = align || 'left';
+  if (st.error) { text('LINK - ' + st.error, x, y, 1, align, 1); return; }
+  if (st.linked) {
+    if (performance.now() - st.linkedAt < 1600) text('CONTROLLER LINKED', x, y, 1, align, 2);
+    return;
+  }
+  if (!st.code) return;
+  // el protocolo y el index.html sobran para tipear a mano en el celular
+  const url = Link.url().replace(/^https?:\/\//, '').replace(/index\.html\?/, '?');
+  text('PHONE ' + url, x, y, 1, align, 1);
+  text(st.code, x, y + T, s || 1, align, 2);
+}
+
+/* ------------------------------- pantallas ------------------------------ */
 function drawMenu() {
-  const cy = H / 2;
-  text('MY SPACE DRIFT', W / 2, H * 0.19, Math.min(52, W * 0.073), 'center', 1);
-  text('— — — — — — — — —', W / 2, H * 0.19 + 34, 14, 'center', 0.4);
-  button('PLAY', W / 2, cy + 6, 190, 46, 20);
-  button('HIGH SCORES', W / 2, cy + 66, 190, 40, 15);
-  drawControlLines(H - 74, Math.min(13, W * 0.026), 0.55);
+  const cx = LW / 2;
+  text('MY SPACE DRIFT', cx, T, 2, 'center', 3);
+  ctx.fillStyle = TONE[2];
+  ctx.fillRect(Math.round(cx - 56), 3 * T + 2, 112, 1);
+  menuBox(['PLAY', 'HIGH SCORES'], cx, 5 * T, 112);
+  if (G.attract) text('DEMO', T / 2, T / 2, 1, 'left', 2);
+  else drawLinkCode(cx, 11 * T, 2, 'center');   // el codigo se lee desde el sillon
+  drawControlLines(LH() - 2, 1);
   drawMuteButton();
-  if (G.attract) text('DEMO', 34, 30, 13, 'left', 0.5);
 }
 
 function drawHud() {
-  text('SCORE ' + String(Math.floor(G.score)).padStart(6, '0'), 18, 26, 15, 'left', 0.9);
-  text('LEVEL ' + G.level, W - 18, 26, 15, 'right', 0.9);
-  if (G.levelBanner > 0) {
-    const a = clamp(G.levelBanner / 0.35, 0, 1);
-    text('LEVEL ' + G.level, W / 2, H / 2, Math.min(64, W * 0.1), 'center', a);
+  // franja de estado: es la window layer de la Game Boy, arriba y fija
+  text('SCORE ' + String(Math.floor(G.score)).padStart(6, '0'), T / 2, T / 2, 1, 'left', 3);
+  text('LV ' + G.level, LW - 3 * T - 2, T / 2, 1, 'right', 3);
+  drawMuteButton();
+  if (G.levelBanner > 0 && blink(140)) {
+    text('LEVEL ' + G.level, LW / 2, LH() / 2 - 7, 2, 'center', 3);
   }
 }
 
 function drawDead() {
-  const cy = H / 2;
-  text('GAME OVER', W / 2, cy - 92, Math.min(46, W * 0.075));
-  text(String(Math.floor(G.score)).padStart(6, '0'), W / 2, cy - 34, Math.min(56, W * 0.09));
-  text('LEVEL ' + G.level, W / 2, cy + 8, 17, 'center', 0.85);
+  const cx = LW / 2;
+  text('GAME OVER', cx, 3 * T, 2, 'center', 3);
+  text(String(Math.floor(G.score)).padStart(6, '0'), cx, 6 * T, 2, 'center', 3);
+  text('LEVEL ' + G.level, cx, 8 * T + 6, 1, 'center', 2);
   if (hs.pending) {
-    text('NEW HIGH SCORE', W / 2, cy + 46, 18, 'center', (Math.sin(performance.now() / 180) > 0) ? 1 : 0.25);
+    text('NEW HIGH SCORE', cx, 11 * T, 1, 'center', blink(180) ? 3 : 1);
   } else {
-    button('PLAY AGAIN', W / 2, cy + 58, 200, 44, 19);
-    button('MENU', W / 2, cy + 112, 140, 34, 14);
+    menuBox(['PLAY AGAIN', 'MENU'], cx, 10 * T, 112);
   }
-  drawControlLines(H - 58, Math.min(11, W * 0.022), 0.45);
+  drawLinkCode(T / 2, 2, 1);
+  drawMuteButton();
 }
 
 function drawInitials() {
-  const cy = H / 2;
-  text('NEW HIGH SCORE', W / 2, cy - 110, Math.min(30, W * 0.05));
-  text('ENTER INITIALS', W / 2, cy - 76, 14, 'center', 0.6);
-  const size = Math.min(72, W * 0.11), gap = size * 1.15;
+  const cx = LW / 2, cy = LH() / 2;
+  text('NEW HIGH SCORE', cx, 2 * T, 2, 'center', 3);
+  text('ENTER INITIALS', cx, 5 * T, 1, 'center', 2);
+  const s = 4, gap = 8 * s, top = cy - 10;
   for (let i = 0; i < 3; i++) {
-    const x = W / 2 + (i - 1) * gap;
+    const x = cx + (i - 1) * gap;
     const on = i === hs.slot;
-    const blink = on && Math.sin(performance.now() / 200) > 0;
-    text(LETTERS[hs.initials[i]], x, cy, size, 'center', on ? (blink ? 1 : 0.35) : 0.75);
+    text(LETTERS[hs.initials[i]], x, top, s, 'center', on ? (blink(200) ? 3 : 1) : 2);
     if (on) {
-      ctx.strokeStyle = CFG.ink; ctx.lineWidth = 2; ctx.globalAlpha = 0.8;
-      ctx.beginPath(); ctx.moveTo(x - size * 0.32, cy + size * 0.46); ctx.lineTo(x + size * 0.32, cy + size * 0.46); ctx.stroke();
-      ctx.globalAlpha = 1;
+      ctx.fillStyle = TONE[3];
+      ctx.fillRect(Math.round(x - 3 * s), top + 7 * s + 2, 6 * s, 2);
     }
   }
-  text('LEFT ▼   RIGHT ▲   BOTH — OK', W / 2, cy + 96, Math.min(15, W * 0.028), 'center', 0.6);
+  text('LEFT ▼   RIGHT ▲   BOTH - OK', cx, LH() - 3 * T, 1, 'center', 2);
 }
 
 function drawScores() {
-  text('HIGH SCORES', W / 2, H * 0.13, Math.min(34, W * 0.055));
+  const cx = LW / 2;
+  text('HIGH SCORES', cx, T + 4, 2, 'center', 3);
   const list = hs.list.length ? hs.list : Store.cached();
-  const top = H * 0.13 + 42;
-  const rowH = Math.min(26, (H * 0.62) / CFG.maxScores);
-  const size = Math.min(16, rowH * 0.68);
-  const x0 = W / 2 - Math.min(200, W * 0.34), x1 = W / 2 + Math.min(200, W * 0.34);
-  if (!list.length) text('NO SCORES YET — PLAY A ROUND', W / 2, top + 40, 14, 'center', 0.55);
-  for (let i = 0; i < list.length; i++) {
-    const e = list[i], y = top + 14 + i * rowH;
-    const a = 1 - i * 0.045;
-    text(String(i + 1).padStart(2, ' '), x0, y, size, 'left', a * 0.6);
-    text(e.i, x0 + size * 2.6, y, size, 'left', a);
-    text(String(e.s).padStart(6, '0'), x1 - size * 4.6, y, size, 'right', a);
-    text('LV ' + e.l, x1, y, size, 'right', a * 0.6);
+  const rows = hs.fromRun ? ['PLAY AGAIN', 'BACK'] : ['BACK'];
+  const boxTop = LH() - 2 - (6 + rows.length * 12);
+  const top = 3 * T + 4, rowH = T;
+  const x0 = Math.round(cx - 76), x1 = Math.round(cx + 76);
+  if (!list.length) text('NO SCORES YET', cx, top + 2 * T, 1, 'center', 2);
+  for (let i = 0; i < list.length && top + i * rowH < boxTop - 4; i++) {
+    const e = list[i], y = top + i * rowH;
+    const tone = i < 3 ? 3 : 2;
+    text(String(i + 1).padStart(2, ' '), x0, y, 1, 'left', 1);
+    text(e.i, x0 + 18, y, 1, 'left', tone);
+    text(String(e.s).padStart(6, '0'), x1 - 30, y, 1, 'right', tone);
+    text('LV ' + e.l, x1, y, 1, 'right', 1);
   }
-  if (hs.fromRun) {
-    button('PLAY AGAIN', W / 2 - 90, H - 46, 160, 36, 15);
-    button('BACK', W / 2 + 90, H - 46, 140, 36, 15);
-  } else {
-    button('BACK', W / 2, H - 46, 150, 36, 15);
-  }
+  menuBox(rows, cx, boxTop, 112);
+  drawMuteButton();
 }
 
 function drawRotate() {
-  text('ROTATE YOUR DEVICE', W / 2, H / 2, Math.min(24, W * 0.075));
-  ctx.strokeStyle = CFG.ink; ctx.lineWidth = 2; ctx.globalAlpha = 0.7;
-  const bw = Math.min(70, W * 0.22), bh = bw * 1.7, x = W / 2 - bw / 2, y = H / 2 - bh - 40;
-  ctx.strokeRect(x, y, bw, bh);
-  ctx.beginPath(); ctx.arc(W / 2, y + bh + 24, 16, -2.4, 0.8); ctx.stroke();
-  ctx.globalAlpha = 1;
+  const cx = LW / 2, cy = LH() / 2;
+  text('ROTATE', cx, cy - T, 2, 'center', 3);
+  text('YOUR DEVICE', cx, cy + T, 1, 'center', 2);
 }
 
 /* ============================ pantallas ============================ */
+// Dentro de la partida el unico boton que escucha es el de sonido: el resto de
+// la pantalla es motor y no se le puede robar el toque.
+function handleHudTap(t) {
+  if (!hit(muteBox(), t)) return false;
+  Sfx.init(); Sfx.resume(); Sfx.ui();
+  Sfx.toggleMute();
+  return true;
+}
+
 function handleMenuTap(t) {
   for (const b of G.buttons) {
     if (!hit(b, t)) continue;
@@ -1197,10 +1589,9 @@ function frame(now) {
   if (screen !== SCREEN.DEAD) deadHold = 0;
 
   // ---------- render ----------
-  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  ctx.setTransform(PIX, 0, 0, PIX, 0, 0);
   ctx.fillStyle = CFG.bg;
   ctx.fillRect(0, 0, W, H);
-  ctx.drawImage(gridCv, 0, 0, W, H);
 
   const worldVisible = screen === SCREEN.PLAY || (screen === SCREEN.MENU && G.attract);
   if (worldVisible) renderWorld();
@@ -1223,24 +1614,29 @@ function frame(now) {
     ctx.fillRect(0, 0, W, H); ctx.globalAlpha = 1;
   }
 
+  // la interfaz se dibuja 1:1 contra el buffer del LCD, en pixeles enteros
+  uiBegin();
   if (screen === SCREEN.PLAY) drawHud();
   else if (screen === SCREEN.MENU) drawMenu();
   else if (screen === SCREEN.DEAD) drawDead();
   else if (screen === SCREEN.INITIALS) drawInitials();
   else if (screen === SCREEN.SCORES) drawScores();
   else if (screen === SCREEN.ROTATE) drawRotate();
+  uiEnd();
 
-  // scanlines suaves del LCD
-  ctx.fillStyle = '#000'; ctx.globalAlpha = CFG.scanlineAlpha;
-  for (let y = 0; y < H; y += 3) ctx.fillRect(0, y, W, 1);
-  ctx.globalAlpha = 1;
+  // la escena de baja resolucion pasa por el LCD: paleta, trama y reticula
+  LCD.present();
 
   // ---------- taps de menu ----------
   if (tap) {
-    if (screen === SCREEN.MENU) {
+    if (screen === SCREEN.PLAY) {
+      handleHudTap(tap);
+    } else if (screen === SCREEN.MENU) {
       Input.lastTouch = now;
-      if (G.attract) { G.attract = false; G.ship = null; G.meteors.length = 0; G.bullets.length = 0; G.pickups.length = 0; G.shards.length = 0; G.rings.length = 0; Sfx.engine(false); }
-      else handleMenuTap(tap);
+      // el boton de sonido gana al toque que corta la demo
+      if (G.attract) {
+        if (!handleHudTap(tap)) { G.attract = false; G.ship = null; G.meteors.length = 0; G.bullets.length = 0; G.pickups.length = 0; G.shards.length = 0; G.rings.length = 0; Sfx.engine(false); }
+      } else handleMenuTap(tap);
     } else if (screen === SCREEN.SCORES || screen === SCREEN.DEAD) {
       handleMenuTap(tap);
     }
@@ -1257,12 +1653,16 @@ function frame(now) {
    WebRTC, asi que en la misma red el retraso es de milisegundos.
    El celular manda las coordenadas normalizadas de sus dedos y la TV las
    mete en Input.pointers: para el juego es identico a tocar la pantalla.
+   El codigo NO se dibuja aca: el modulo solo publica su estado con status()
+   y las pantallas de menu lo pintan en el canvas, asi pasa por el LCD y
+   desaparece durante la partida (§20.2).
    ==================================================================== */
 const Link = (() => {
   const IS_CTRL = new URLSearchParams(location.search).has('ctrl');
   const PREFIX  = 'vdrift-';
   const LS_KEY  = 'vdrift.lastcode';
-  let peer = null, conn = null, myCode = '', tries = 0, box = null;
+  let peer = null, conn = null, myCode = '', tries = 0;
+  const state = { code: '', linked: false, linkedAt: 0, error: '' };
 
   const el = (tag, id, parent) => {
     const e = document.createElement(tag);
@@ -1274,36 +1674,34 @@ const Link = (() => {
   const ctrlUrl = () => location.origin + location.pathname + '?ctrl';
 
   /* ------------------------- lado PANTALLA (TV) ------------------------- */
-  function showCode() {
-    box.hidden = false;
-    box.innerHTML = 'phone &rarr; ' + ctrlUrl() + '<b>' + myCode + '</b>';
-  }
+  function unlink() { conn = null; clearRemote(); state.linked = false; }
 
   function openPeer() {
     myCode = digits6();
     peer = new Peer(PREFIX + myCode);
 
-    peer.on('open', showCode);
+    peer.on('open', () => { state.code = myCode; state.error = ''; });
 
     peer.on('error', err => {
       if (err.type === 'unavailable-id' && tries++ < 6) { peer.destroy(); openPeer(); return; }
-      box.hidden = false;
-      box.textContent = 'link error — ' + err.type;
+      state.code = '';
+      state.error = err.type;
     });
 
     peer.on('connection', c => {
       if (conn) { try { conn.close(); } catch (e) {} }
       conn = c;
       c.on('open', () => {
-        box.innerHTML = 'controller linked';
-        setTimeout(() => { if (conn) box.hidden = true; }, 1600);
+        state.linked = true;
+        state.linkedAt = performance.now();
+        state.error = '';
         sendAspect();
         Sfx.init(); Sfx.resume();
         Input.lastTouch = performance.now();
       });
       c.on('data', onData);
-      c.on('close', () => { conn = null; clearRemote(); showCode(); });
-      c.on('error', () => { conn = null; clearRemote(); showCode(); });
+      c.on('close', unlink);
+      c.on('error', unlink);
     });
   }
 
@@ -1330,9 +1728,7 @@ const Link = (() => {
   }
 
   function screenMode() {
-    box = el('div', 'link-code');
-    box.addEventListener('click', () => { Sfx.init(); Sfx.resume(); });
-    if (!window.Peer) { box.textContent = 'link unavailable — no internet'; return; }
+    if (!window.Peer) { state.error = 'no internet'; return; }
     openPeer();
     window.addEventListener('resize', () => setTimeout(sendAspect, 150));
   }
@@ -1444,7 +1840,9 @@ const Link = (() => {
 
   return {
     isController: IS_CTRL,
-    start() { IS_CTRL ? controllerMode() : screenMode(); }
+    start() { IS_CTRL ? controllerMode() : screenMode(); },
+    url: ctrlUrl,
+    status() { return state; }
   };
 })();
 
@@ -1454,6 +1852,7 @@ if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
   navigator.serviceWorker.register('sw.js').catch(() => {});   // offline; se ignora si no existe
 }
 Store.load().then(l => { hs.list = l; });
+Prefs.loadMuted().then(m => { if (m) Sfx.setMuted(true); });
 document.addEventListener('visibilitychange', () => { if (document.hidden) Sfx.engine(false); last = performance.now(); });
 window.addEventListener('load', () => Link.start());
 if (!Link.isController) requestAnimationFrame(frame);   // el celular-control no renderiza el juego
