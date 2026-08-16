@@ -123,35 +123,100 @@ const CFG = {
 };
 
 /* ============================ storage ============================ */
-// Top 10 debe sobrevivir a cerrar la app (§12.6).
+// Top 10 debe sobrevivir a cerrar la app (§12.6). La tabla cuelga del codigo
+// de la tele: cada codigo tiene la suya y se guarda firmada, asi que cambiar
+// el JSON desde el inspector la invalida y la tabla vuelve vacia en vez de
+// aceptar el puntaje inventado.
 // window.storage (entorno de artifacts) -> localStorage -> memoria.
 const Store = (() => {
-  // Nombre historico: se mantiene tras renombrar el juego para no perder los records ya guardados.
-  const KEY = 'vectordrift:scores';
-  let mem = null;
+  // Nombre historico: la tabla vieja (una sola, sin codigo) se migra a la del
+  // codigo la primera vez que arranca esta version, para no perder records.
+  const OLD_KEY = 'vectordrift:scores';
+  const keyFor  = c => 'vectordrift:scores:' + c;
+  const SALT    = 'my-space-drift/scores/v2';
+  let code = '', mem = null;
   const hasWin = typeof window !== 'undefined' && window.storage && typeof window.storage.get === 'function';
-  return {
-    async load() {
-      if (mem) return mem;
+  const enc = new TextEncoder();
+
+  const readRaw = async k => {
+    try {
+      if (hasWin) { const r = await window.storage.get(k, false); return (r && r.value) || ''; }
+      return localStorage.getItem(k) || '';
+    } catch (e) { return ''; }
+  };
+  const writeRaw = async (k, v) => {
+    try {
+      if (hasWin) await window.storage.set(k, v, false);
+      else localStorage.setItem(k, v);
+    } catch (e) { /* queda en la memoria de la sesion */ }
+  };
+
+  // Firma de la tabla. La clave sale del codigo de la tele, asi que una tabla
+  // firmada tampoco se puede copiar a otro codigo. Con Web Crypto (https) es
+  // HMAC-SHA-256; sin el queda un checksum, mas debil pero igual rompe la
+  // edicion a mano.
+  async function sign(body) {
+    const seed = SALT + '|' + code;
+    const subtle = (typeof crypto !== 'undefined' && crypto.subtle) || null;
+    if (subtle) {
       try {
-        if (hasWin) {
-          const r = await window.storage.get(KEY, false);
-          mem = r && r.value ? JSON.parse(r.value) : [];
-        } else {
-          mem = JSON.parse(localStorage.getItem(KEY) || '[]');
-        }
-      } catch (e) { mem = []; }
-      if (!Array.isArray(mem)) mem = [];
+        const key = await subtle.importKey('raw', enc.encode(seed), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+        const mac = await subtle.sign('HMAC', key, enc.encode(body));
+        return [...new Uint8Array(mac)].map(b => b.toString(16).padStart(2, '0')).join('');
+      } catch (e) { /* sin Web Crypto util: queda el checksum */ }
+    }
+    let h = 0x811c9dc5;
+    const s = seed + '|' + body;
+    for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; }
+    return 'c' + h.toString(16).padStart(8, '0');
+  }
+
+  // Solo sobreviven los tres campos que el juego dibuja, ya ordenados y
+  // recortados: lo que venga de mas en el JSON no llega a la pantalla.
+  const clean = list => (Array.isArray(list) ? list : [])
+    .filter(e => e && typeof e === 'object')
+    .map(e => ({
+      i: String(e.i == null ? '???' : e.i).slice(0, 3).toUpperCase(),
+      s: Math.max(0, Math.min(999999, Math.floor(Number(e.s) || 0))),
+      l: Math.max(1, Math.min(99, Math.floor(Number(e.l) || 1)))
+    }))
+    .sort((a, b) => b.s - a.s)
+    .slice(0, CFG.maxScores);
+
+  const bodyOf = list => JSON.stringify({ c: code, l: list });
+
+  async function save(list) {
+    mem = clean(list);
+    const b = bodyOf(mem);
+    await writeRaw(keyFor(code), JSON.stringify({ v: 2, b, g: await sign(b) }));
+  }
+
+  async function load() {
+    if (mem) return mem;
+    const raw = await readRaw(keyFor(code));
+    if (!raw) {                                  // primer arranque con este codigo
+      const old = await readRaw(OLD_KEY);
+      mem = [];
+      if (old) { try { mem = clean(JSON.parse(old)); } catch (e) { mem = []; } }
+      if (mem.length) await save(mem);
       return mem;
-    },
-    async save(list) {
-      mem = list;
-      const raw = JSON.stringify(list);
-      try {
-        if (hasWin) await window.storage.set(KEY, raw, false);
-        else localStorage.setItem(KEY, raw);
-      } catch (e) { /* queda en memoria de la sesion */ }
-    },
+    }
+    mem = [];
+    try {
+      const rec = JSON.parse(raw);
+      if (rec && rec.b && rec.g && rec.g === await sign(rec.b)) {
+        const inner = JSON.parse(rec.b);
+        if (inner && inner.c === code) mem = clean(inner.l);   // firma valida y del mismo codigo
+      }
+    } catch (e) { mem = []; }                    // firma rota: la tabla se descarta entera
+    return mem;
+  }
+
+  return {
+    bind(c) { code = String(c || ''); mem = null; },
+    // el codigo cambio (choque de id en el servidor): la tabla se muda con el
+    async rekey(next) { const list = mem || []; code = String(next || ''); await save(list); },
+    load, save,
     cached() { return mem || []; }
   };
 })();
@@ -1002,7 +1067,7 @@ const LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
 
 function endRun() {
   const list = Store.cached().slice();
-  const entry = { i: 'AAA', s: Math.floor(G.score), l: G.level, m: 1 };
+  const entry = { i: 'AAA', s: Math.floor(G.score), l: G.level };
   const qualifies = list.length < CFG.maxScores || entry.s > list[list.length - 1].s;
   hs.pending = qualifies ? entry : null;
   screen = SCREEN.DEAD;
@@ -1013,10 +1078,8 @@ async function commitInitials() {
   e.i = hs.initials.map(i => LETTERS[i]).join('');
   const list = Store.cached().slice();
   list.push(e);
-  list.sort((a, b) => b.s - a.s);           // ordenado por puntaje, nunca por nivel (§12.6)
-  while (list.length > CFG.maxScores) list.pop();
-  hs.list = list;
-  await Store.save(list);
+  await Store.save(list);                   // ordena por puntaje, nunca por nivel (§12.6), recorta y firma
+  hs.list = Store.cached();
   hs.pending = null;
   hs.fromRun = true;
   screen = SCREEN.SCORES;
@@ -1682,9 +1745,13 @@ function frame(now) {
 /* ==================== enlace TV <-> celular (§20) ====================
    Misma URL en los dos aparatos. La TV se abre normal y muestra un codigo
    de 6 digitos; el celular se abre con ?ctrl, escribes ese codigo y se
-   conecta solo. El handshake pasa por el servidor publico de PeerJS (hace
-   falta internet una vez), pero los datos del control viajan directo por
-   WebRTC, asi que en la misma red el retraso es de milisegundos.
+   conecta solo. El handshake pasa por el servidor publico de PeerJS y los
+   datos del control van por WebRTC: si los dos aparatos estan en la misma
+   red el trafico es directo, y si no lo estan (celular con datos, tele por
+   ethernet, cada uno en su casa) sale por los STUN/TURN de ICE. No hace
+   falta LAN comun, hace falta internet en los dos lados.
+   El codigo es el mismo entre recargas: se guarda y con el viaja el top 10
+   (§12.7), asi que recargar la tele no rompe el enlace ni borra la tabla.
    El celular manda las coordenadas normalizadas de sus dedos y la TV las
    mete en Input.pointers: para el juego es identico a tocar la pantalla.
    El codigo NO se dibuja aca: el modulo solo publica su estado con status()
@@ -1694,7 +1761,23 @@ function frame(now) {
 const Link = (() => {
   const IS_CTRL = new URLSearchParams(location.search).has('ctrl');
   const PREFIX  = 'vdrift-';
-  const LS_KEY  = 'vdrift.lastcode';
+  const LS_KEY  = 'vdrift.lastcode';   // celular: ultimo codigo tecleado
+  const LS_TV   = 'vdrift.tvcode';     // tele: su codigo, estable entre recargas
+  // STUN descubre la IP publica y alcanza para casi todas las redes; TURN es
+  // el plan B cuando el NAT no deja pasar nada directo (datos moviles con
+  // CGNAT, wifi de hotel, redes de empresa) y hace de relevo. Sin esto el
+  // enlace solo era fiable dentro de la misma LAN.
+  const ICE = {
+    iceServers: [
+      { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302',
+               'stun:stun.cloudflare.com:3478'] },
+      { urls: ['turn:openrelay.metered.ca:80', 'turn:openrelay.metered.ca:443',
+               'turns:openrelay.metered.ca:443?transport=tcp'],
+        username: 'openrelayproject', credential: 'openrelayproject' },
+      { urls: ['turn:staticauth.openrelay.metered.ca:80'],
+        username: 'openrelayproject', credential: 'openrelayproject' }
+    ]
+  };
   let peer = null, conn = null, myCode = '', tries = 0;
   const state = { code: '', linked: false, linkedAt: 0, error: '' };
 
@@ -1706,18 +1789,38 @@ const Link = (() => {
   };
   const digits6 = () => String(Math.floor(100000 + Math.random() * 900000));
   const ctrlUrl = () => location.origin + location.pathname + '?ctrl';
+  const remember = c => { try { localStorage.setItem(LS_TV, c); } catch (e) {} };
+
+  // El codigo de la tele se genera una sola vez y queda guardado. Se pide
+  // antes de abrir el peer porque el top 10 cuelga de el (§12.7).
+  function deviceCode() {
+    if (myCode) return myCode;
+    let saved = '';
+    try { saved = localStorage.getItem(LS_TV) || ''; } catch (e) {}
+    myCode = /^\d{6}$/.test(saved) ? saved : digits6();
+    if (myCode !== saved) remember(myCode);
+    return myCode;
+  }
 
   /* ------------------------- lado PANTALLA (TV) ------------------------- */
   function unlink() { conn = null; clearRemote(); state.linked = false; }
 
   function openPeer() {
-    myCode = digits6();
-    peer = new Peer(PREFIX + myCode);
+    peer = new Peer(PREFIX + deviceCode(), { config: ICE });
 
     peer.on('open', () => { state.code = myCode; state.error = ''; });
 
     peer.on('error', err => {
-      if (err.type === 'unavailable-id' && tries++ < 6) { peer.destroy(); openPeer(); return; }
+      // el id guardado ya lo tiene otra pantalla abierta: se saca uno nuevo,
+      // se guarda y el top 10 se muda con el
+      if (err.type === 'unavailable-id' && tries++ < 6) {
+        peer.destroy();
+        myCode = digits6();
+        remember(myCode);
+        Store.rekey(myCode);
+        openPeer();
+        return;
+      }
       state.code = '';
       state.error = err.type;
     });
@@ -1778,7 +1881,7 @@ const Link = (() => {
     const msg   = el('p', 'ctrl-msg', root);
     input.type = 'text'; input.inputMode = 'numeric'; input.maxLength = 6;
     input.placeholder = '000000'; input.autocomplete = 'off';
-    msg.textContent = 'both devices on the same wi-fi';
+    msg.textContent = 'wi-fi, ethernet or mobile data';
 
     if (!window.Peer) { msg.textContent = 'no internet — cannot pair'; input.disabled = true; return; }
 
@@ -1832,49 +1935,69 @@ const Link = (() => {
     rect.addEventListener('pointercancel', up);
     window.addEventListener('blur', () => { pts.clear(); sendPts(); });
 
+    let lastCode = '', retry = 0, wait = 3000;
+
     function connect(code) {
+      lastCode = code;
+      clearTimeout(retry);
       msg.textContent = 'connecting…';
       input.disabled = true;
-      peer = new Peer();
+      peer = new Peer({ config: ICE });
       peer.on('open', () => {
         conn = peer.connect(PREFIX + code, { reliable: true });
         conn.on('open', () => {
           try { localStorage.setItem(LS_KEY, code); } catch (e) {}
           root.hidden = true; pad.hidden = false;
+          wait = 3000;
           layoutPad();
           navigator.wakeLock && navigator.wakeLock.request('screen').catch(() => {});
         });
         conn.on('data', m => { if (m && m.t === 'ar') { aspect = m.ar; layoutPad(); } });
-        conn.on('close', () => reset('disconnected'));
-        conn.on('error', () => reset('connection failed'));
+        conn.on('close', () => reset('disconnected', true));
+        conn.on('error', () => reset('connection failed', true));
       });
       peer.on('error', err => {
-        reset(err.type === 'peer-unavailable' ? 'no tv with that code' : 'error — ' + err.type);
+        const gone = err.type === 'peer-unavailable';
+        reset(gone ? 'no tv with that code' : 'error — ' + err.type, gone);
       });
     }
 
-    function reset(why) {
+    // El codigo de la tele ya no cambia al recargarla, asi que cuando se cae
+    // el enlace el celular vuelve solo: reintenta el mismo codigo hasta que
+    // la pantalla este de nuevo arriba. Si el jugador toca el campo, manda el.
+    function reset(why, again) {
       try { peer && peer.destroy(); } catch (e) {}
       peer = null; conn = null; pts.clear();
       root.hidden = false; pad.hidden = true;
-      input.disabled = false; input.value = '';
+      input.disabled = false;
       msg.textContent = why;
+      clearTimeout(retry);
+      if (again && lastCode) {
+        input.value = lastCode;
+        retry = setTimeout(() => connect(lastCode), wait);
+        wait = Math.min(Math.round(wait * 1.6), 15000);   // la tele puede tardar en volver
+      } else {
+        input.value = '';
+      }
     }
 
+    input.addEventListener('focus', () => { clearTimeout(retry); lastCode = ''; });
     input.addEventListener('input', () => {
+      clearTimeout(retry);
       input.value = input.value.replace(/\D/g, '').slice(0, 6);
       if (input.value.length === 6) { input.blur(); connect(input.value); }   // conecta solo
     });
 
     let saved = '';
     try { saved = localStorage.getItem(LS_KEY) || ''; } catch (e) {}
-    if (saved.length === 6) { input.value = saved; connect(saved); }
+    if (/^\d{6}$/.test(saved)) { input.value = saved; connect(saved); }
     else setTimeout(() => input.focus(), 300);
   }
 
   return {
     isController: IS_CTRL,
     start() { IS_CTRL ? controllerMode() : screenMode(); },
+    code: deviceCode,          // el top 10 cuelga de este codigo (§12.7)
     url: ctrlUrl,
     status() { return state; }
   };
@@ -1885,6 +2008,7 @@ resize();
 if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
   navigator.serviceWorker.register('sw.js').catch(() => {});   // offline; se ignora si no existe
 }
+Store.bind(Link.code());                 // la tabla es la de este codigo (§12.7)
 Store.load().then(l => { hs.list = l; });
 Prefs.loadMuted().then(m => { if (m) Sfx.setMuted(true); });
 document.addEventListener('visibilitychange', () => { if (document.hidden) Sfx.engine(false); last = performance.now(); });
