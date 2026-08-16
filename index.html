@@ -686,10 +686,14 @@ const LCD = (() => {
    Se destapa tocando el titulo del menu CFG.tintTaps veces seguidas (o con la
    tecla T en escritorio) y cada vez pasa al siguiente hue de la lista. El
    elegido se guarda, asi que el vidrio sigue puesto al reabrir el juego.
+   La secuencia es para encontrarlo, no para usarlo: una vez destapado, un solo
+   toque pasa al siguiente vidrio. Y como el tinte solo se guarda despues de
+   haberlo destapado, tener uno guardado ya cuenta como encontrado: quien lo
+   descubrio una vez no vuelve a picar cuatro veces nunca mas.
    ==================================================================== */
 const Tint = (() => {
   const list = CFG.tints;
-  let idx = 0, osd = 0, taps = 0, lastTap = 0;
+  let idx = 0, osd = 0, taps = 0, lastTap = 0, found = false;
 
   // hue -> color puro (HSV con s=v=1) aclarado hacia el blanco segun
   // CFG.tintSat: el filtro tine, no repinta. Con el blanco puro no hay filtro.
@@ -708,18 +712,23 @@ const Tint = (() => {
   function set(name) {
     const i = list.findIndex(t => t.name === name);
     idx = i < 0 ? 0 : i;                       // nombre viejo o vacio: vidrio limpio
+    found = true;                              // habia un tinte guardado: ya lo destapo
     apply();
   }
   function cycle() {
     idx = (idx + 1) % list.length;
+    found = true;                              // se llega aca por la secuencia o por la tecla T
     apply();
     Prefs.saveTint(list[idx].name);
     osd = CFG.tintOsdTime;
     return list[idx].name;
   }
-  // Los toques sueltos no hacen nada y no suenan: solo el ultimo de la
-  // secuencia cambia el vidrio, o dejaria de ser un secreto.
+  // Antes de destaparlo los toques sueltos no hacen nada y no suenan: solo el
+  // ultimo de la secuencia cambia el vidrio, o dejaria de ser un secreto.
+  // Despues ya no hay secreto que guardar y el titulo es un boton comun: un
+  // toque, el siguiente vidrio.
   function tap() {
+    if (found) { cycle(); return true; }
     const now = performance.now();
     taps = (now - lastTap > CFG.tintTapWindow * 1000) ? 1 : taps + 1;
     lastTap = now;
@@ -731,6 +740,7 @@ const Tint = (() => {
 
   return {
     set, cycle, tap,
+    get found() { return found; },
     get name() { return list[idx].name; },
     get osd()  { return osd; },
     tick(dt) { if (osd > 0) osd = Math.max(0, osd - dt); }
@@ -1940,9 +1950,10 @@ function drawLinkCode(x, y, s, align) {
 const TITLE = 'MY SPACE DRIFT';
 const titleScale = () => (Font.width(TITLE, 2) <= LW - 5 * T ? 2 : 1);
 
-// El titulo es el boton escondido del tinte (§21.1): no se dibuja distinto ni
-// responde al toque suelto, solo cuenta. El area se corta antes del boton de
-// sonido, que en pantallas angostas le queda encima.
+// El titulo es el boton escondido del tinte (§21.1): no se dibuja distinto y,
+// mientras el secreto siga sin destapar, tampoco responde al toque suelto, solo
+// cuenta. El area se corta antes del boton de sonido, que en pantallas angostas
+// le queda encima.
 function tintBox() {
   const w = Font.width(TITLE, titleScale());
   const x = Math.round(LW / 2 - w / 2);
@@ -2060,7 +2071,8 @@ function activate(label) {
 function handleMenuTap(t) {
   for (const b of G.buttons) {
     if (!hit(b, t)) continue;
-    // el titulo se come el toque en silencio hasta completar la secuencia
+    // el titulo se come el toque en silencio hasta completar la secuencia;
+    // ya destapado, cada toque suelto cambia de vidrio
     if (b.label === 'TINT') {
       if (Tint.tap()) { Sfx.init(); Sfx.resume(); Sfx.level(); buzz(20); }
       return true;
