@@ -2,11 +2,14 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <meta name="theme-color" content="#000000">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<!-- black-translucent + viewport-fit=cover: en iOS la pagina ocupa tambien la franja de
+     la barra de estado, en vez de quedar empujada hacia abajo dejando un marco arriba.
+     Lo que queda debajo del notch se descuenta luego con SAFE (ver resize). -->
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="My Space Drift">
 <link rel="icon" href="icon-192.png" type="image/png" sizes="192x192">
 <link rel="apple-touch-icon" href="icon-180.png">
@@ -14,10 +17,17 @@
 <title>MY SPACE DRIFT</title>
 <style>
   *{margin:0;padding:0;box-sizing:border-box}
-  html,body{width:100%;height:100%;overflow:hidden;background:#000;
+  /* dvh = alto visible de verdad. Con 100% o 100vh el movil reserva sitio para barras
+     que en pantalla completa no existen, y lo de abajo quedaba cortado. */
+  html,body{width:100%;height:100vh;height:100dvh;overflow:hidden;background:#000;
     -webkit-user-select:none;user-select:none;-webkit-touch-callout:none;
     -webkit-tap-highlight-color:transparent;touch-action:none;overscroll-behavior:none}
   canvas{display:block;width:100%;height:100%;touch-action:none;image-rendering:pixelated}
+
+  /* Sonda para leer los margenes seguros (notch, isla, barra de gestos) desde JS. */
+  #safe{position:fixed;top:0;left:0;width:0;height:0;pointer-events:none;visibility:hidden;
+    padding:env(safe-area-inset-top) env(safe-area-inset-right)
+            env(safe-area-inset-bottom) env(safe-area-inset-left)}
 
   /* ---- control (celular): DOM puro, no pasa por el shader, se pinta a mano
          con los mismos cuatro tonos de la paleta ---- */
@@ -43,6 +53,7 @@
 </head>
 <body>
 <canvas id="screen"></canvas>
+<div id="safe"></div>
 <script>
 "use strict";
 
@@ -66,6 +77,11 @@ const CFG = {
   // que un juego nativo se disena en estos cuatro y nada mas.
   gbPalette:     ['#000000', '#545454', '#a8a8a8', '#ffffff'],   // de oscuro a claro
   lcdRows:       144,            // exactamente las filas de la Game Boy
+  // El mundo se mide en unidades propias y su ALTO vale siempre baseHeight,
+  // pase lo que pase con la pantalla real. Lo unico que cambia con el aparato
+  // es cuanto ancho se ve. Sin esto el punto del LCD cambiaria de tamano y la
+  // nave encogeria en las pantallas grandes (§21.2).
+  baseHeight:    480,
   tile:          8,             // la rejilla de 8x8 a la que se alinea toda la interfaz
   lcdGain:       1.0,            // la escena ya se dibuja en los tonos de la paleta
   lcdGrid:       0.10,           // fuerza de la reticula de puntos entre celdas (0 = sin reticula)
@@ -73,6 +89,26 @@ const CFG = {
   dither:        0.0,            // sin trama: los bordes tienen que ser duros
   inkCrush:      0.28,           // por debajo de esto el pixel es fondo: mata el halo del antialias
                                  // (queda justo por debajo del gris oscuro, 0.33, para no comerselo)
+
+  // --- tinte del vidrio (easter egg, §21.1) ---
+  // No es una paleta alternativa: son los mismos cuatro tonos con un filtro de
+  // color encima, que es lo que hacia el vidrio de la consola. MONO es el
+  // cristal sin tenir, o sea el blanco y negro de siempre.
+  tints: [
+    { name: 'MONO',    hue: -1 },
+    { name: 'GREEN',   hue: 88 },
+    { name: 'AMBER',   hue: 38 },
+    { name: 'RED',     hue: 4 },
+    { name: 'MAGENTA', hue: 316 },
+    { name: 'VIOLET',  hue: 268 },
+    { name: 'BLUE',    hue: 212 },
+    { name: 'CYAN',    hue: 176 },
+  ],
+  tintSat:       0.62,           // 0 = filtro incoloro, 1 = hue puro (los oscuros se irian a negro de color)
+  tintTaps:      4,              // toques seguidos en el titulo para destapar el easter egg
+  tintTapWindow: 3.0,            // s entre toque y toque: mas lento y la cuenta vuelve a cero
+                                 // (picar cuatro veces apuntando a un titulo en una tele no es rapido)
+  tintOsdTime:   1.4,            // s que el nombre del tinte queda en el menu
 
   // --- nave (§3) ---
   shipLen:       27,             // largo total (proporcion 3:4 con el ancho)
@@ -118,118 +154,264 @@ const CFG = {
   levelStep:     600,
   refillTime:    3.2,            // s en volver a la densidad tras subir de nivel
 
+  // --- navegacion de menus (§4.2) ---
+  chordWait:     0.18,           // s que se espera al segundo dedo antes de dar por hecho que va solo
+  repeatFirst:   0.34,           // s hasta la primera repeticion al mantener un lado
+  repeatNext:    0.11,           // s entre repeticiones
+
+  // --- control remoto (§4.3) ---
+  remoteBeat:    0.25,           // s entre latidos del celular mientras tiene un dedo apoyado
+  remoteTimeout: 1.0,            // s de silencio tras los que la TV suelta los motores sola
+
+  // --- audio (§13) ---
+  volMaster:     0.50,
+  volFloorHz:    380,            // Hz — piso duro: ni el piezo LCD ni un altavoz de movil bajan de aqui
+  attack:        0.0015,         // s — casi instantaneo, solo lo justo para no chasquear
+  release:       0.004,          // s — el piezo se apaga, no se desvanece
+  engineHz:      440,            // portadora del motor
+  enginePulseHz: 18,             // el "putt-putt": la portadora se abre y cierra a esta tasa
+  engineVol:     0.05,
+
   // --- otros ---
   attractDelay:  6.0,            // s de inactividad en el menu antes del modo demo
   maxScores:     10,
 };
 
 /* ============================ storage ============================ */
-// Top 10 debe sobrevivir a cerrar la app (§12.6).
+// Top 10 debe sobrevivir a cerrar la app (§12.6). La tabla cuelga del codigo
+// de la tele: cada codigo tiene la suya y se guarda firmada, asi que cambiar
+// el JSON desde el inspector la invalida y la tabla vuelve vacia en vez de
+// aceptar el puntaje inventado.
 // window.storage (entorno de artifacts) -> localStorage -> memoria.
 const Store = (() => {
-  // Nombre historico: se mantiene tras renombrar el juego para no perder los records ya guardados.
-  const KEY = 'vectordrift:scores';
-  let mem = null;
+  // Nombre historico: la tabla vieja (una sola, sin codigo) se migra a la del
+  // codigo la primera vez que arranca esta version, para no perder records.
+  const OLD_KEY = 'vectordrift:scores';
+  const keyFor  = c => 'vectordrift:scores:' + c;
+  const SALT    = 'my-space-drift/scores/v2';
+  let code = '', mem = null;
   const hasWin = typeof window !== 'undefined' && window.storage && typeof window.storage.get === 'function';
-  return {
-    async load() {
-      if (mem) return mem;
+  const enc = new TextEncoder();
+
+  const readRaw = async k => {
+    try {
+      if (hasWin) { const r = await window.storage.get(k, false); return (r && r.value) || ''; }
+      return localStorage.getItem(k) || '';
+    } catch (e) { return ''; }
+  };
+  const writeRaw = async (k, v) => {
+    try {
+      if (hasWin) await window.storage.set(k, v, false);
+      else localStorage.setItem(k, v);
+    } catch (e) { /* queda en la memoria de la sesion */ }
+  };
+
+  // Firma de la tabla. La clave sale del codigo de la tele, asi que una tabla
+  // firmada tampoco se puede copiar a otro codigo. Con Web Crypto (https) es
+  // HMAC-SHA-256; sin el queda un checksum, mas debil pero igual rompe la
+  // edicion a mano.
+  async function sign(body) {
+    const seed = SALT + '|' + code;
+    const subtle = (typeof crypto !== 'undefined' && crypto.subtle) || null;
+    if (subtle) {
       try {
-        if (hasWin) {
-          const r = await window.storage.get(KEY, false);
-          mem = r && r.value ? JSON.parse(r.value) : [];
-        } else {
-          mem = JSON.parse(localStorage.getItem(KEY) || '[]');
-        }
-      } catch (e) { mem = []; }
-      if (!Array.isArray(mem)) mem = [];
+        const key = await subtle.importKey('raw', enc.encode(seed), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+        const mac = await subtle.sign('HMAC', key, enc.encode(body));
+        return [...new Uint8Array(mac)].map(b => b.toString(16).padStart(2, '0')).join('');
+      } catch (e) { /* sin Web Crypto util: queda el checksum */ }
+    }
+    let h = 0x811c9dc5;
+    const s = seed + '|' + body;
+    for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; }
+    return 'c' + h.toString(16).padStart(8, '0');
+  }
+
+  // Solo sobreviven los tres campos que el juego dibuja, ya ordenados y
+  // recortados: lo que venga de mas en el JSON no llega a la pantalla.
+  const clean = list => (Array.isArray(list) ? list : [])
+    .filter(e => e && typeof e === 'object')
+    .map(e => ({
+      i: String(e.i == null ? '???' : e.i).slice(0, 3).toUpperCase(),
+      s: Math.max(0, Math.min(999999, Math.floor(Number(e.s) || 0))),
+      l: Math.max(1, Math.min(99, Math.floor(Number(e.l) || 1)))
+    }))
+    .sort((a, b) => b.s - a.s)
+    .slice(0, CFG.maxScores);
+
+  const bodyOf = list => JSON.stringify({ c: code, l: list });
+
+  async function save(list) {
+    mem = clean(list);
+    const b = bodyOf(mem);
+    await writeRaw(keyFor(code), JSON.stringify({ v: 2, b, g: await sign(b) }));
+  }
+
+  async function load() {
+    if (mem) return mem;
+    const raw = await readRaw(keyFor(code));
+    if (!raw) {                                  // primer arranque con este codigo
+      const old = await readRaw(OLD_KEY);
+      mem = [];
+      if (old) { try { mem = clean(JSON.parse(old)); } catch (e) { mem = []; } }
+      if (mem.length) await save(mem);
       return mem;
-    },
-    async save(list) {
-      mem = list;
-      const raw = JSON.stringify(list);
-      try {
-        if (hasWin) await window.storage.set(KEY, raw, false);
-        else localStorage.setItem(KEY, raw);
-      } catch (e) { /* queda en memoria de la sesion */ }
-    },
+    }
+    mem = [];
+    try {
+      const rec = JSON.parse(raw);
+      if (rec && rec.b && rec.g && rec.g === await sign(rec.b)) {
+        const inner = JSON.parse(rec.b);
+        if (inner && inner.c === code) mem = clean(inner.l);   // firma valida y del mismo codigo
+      }
+    } catch (e) { mem = []; }                    // firma rota: la tabla se descarta entera
+    return mem;
+  }
+
+  return {
+    bind(c) { code = String(c || ''); mem = null; },
+    // el codigo cambio (choque de id en el servidor): la tabla se muda con el
+    async rekey(next) { const list = mem || []; code = String(next || ''); await save(list); },
+    load, save,
     cached() { return mem || []; }
   };
 })();
 
 // Igual que los records: si el jugador silencia, tiene que seguir silenciado
-// la proxima vez que abra el juego.
+// la proxima vez que abra el juego. Lo mismo vale para el tinte de la pantalla:
+// el vidrio elegido es del aparato, no de la partida.
 const Prefs = (() => {
-  const KEY = 'vectordrift:muted';
+  const KEY_MUTE = 'vectordrift:muted';
+  const KEY_TINT = 'vectordrift:tint';
   const hasWin = typeof window !== 'undefined' && window.storage && typeof window.storage.get === 'function';
+
+  const read = async k => {
+    try {
+      if (hasWin) { const r = await window.storage.get(k, false); return (r && r.value) || ''; }
+      return localStorage.getItem(k) || '';
+    } catch (e) { return ''; }
+  };
+  const write = (k, v) => {
+    try {
+      if (hasWin) window.storage.set(k, v, false);
+      else localStorage.setItem(k, v);
+    } catch (e) { /* queda en la sesion */ }
+  };
+
   return {
-    async loadMuted() {
-      try {
-        if (hasWin) { const r = await window.storage.get(KEY, false); return !!r && r.value === '1'; }
-        return localStorage.getItem(KEY) === '1';
-      } catch (e) { return false; }
-    },
-    saveMuted(m) {
-      const raw = m ? '1' : '0';
-      try {
-        if (hasWin) window.storage.set(KEY, raw, false);
-        else localStorage.setItem(KEY, raw);
-      } catch (e) { /* queda en la sesion */ }
-    }
+    async loadMuted() { return (await read(KEY_MUTE)) === '1'; },
+    saveMuted(m) { write(KEY_MUTE, m ? '1' : '0'); },
+    // El nombre y no el indice: reordenar CFG.tints no le cambia el vidrio a
+    // nadie, y un nombre que ya no existe cae solo en el primero de la lista.
+    async loadTint() { return await read(KEY_TINT); },
+    saveTint(name) { write(KEY_TINT, String(name || '')); }
   };
 })();
 
 /* ============================ audio (§13) ============================ */
-// Chiptune crudo con osciladores. Nada grabado. El audio nunca es informacion
-// necesaria: todo lo que suena tambien esta en pantalla.
-const Sfx = (() => {
-  let ac = null, master = null, engineOsc = null, engineGain = null;
-  let muted = false, ready = false;
+// Suena a maquinita LCD: un zumbador piezoelectrico movido por ondas cuadradas, como
+// una Game & Watch. De ese hardware salen todas las reglas de este modulo:
+//   - solo 'square': el piezo no reproduce otra cosa
+//   - nada por debajo de CFG.volFloorHz: el piezo no tiene graves, y el altavoz de un
+//     movil tampoco, asi que la fidelidad historica y la reproduccion real coinciden
+//   - envolventes rectangulares: el piezo esta encendido o apagado, no se desvanece
+//   - sin ruido blanco: la Game & Watch no tenia generador de ruido. Sus explosiones
+//     eran saltos rapidos de tono, que es lo que hace scramble()
+//   - la dinamica va por duracion, no por volumen: el piezo no controla amplitud
+// Nada grabado, ni un solo archivo. El audio nunca es informacion necesaria: todo lo
+// que suena tambien esta en pantalla.
 
-  function init() {
-    if (ready) return;
+// La menor pentatonica, de 440 Hz a 2637. Toda frecuencia del juego sale de esta tabla:
+// cualquier par de notas de aqui suena intencional en vez de aleatorio.
+const TONES = [440, 523, 587, 659, 784, 880, 1047, 1175, 1319, 1568, 1760, 2093, 2349, 2637];
+
+const Sfx = (() => {
+  let ac = null, master = null;
+  let engOsc = null, engLfo = null, engGain = null;
+  let muted = false, ready = false, quiet = false;
+  const last = {};                  // ultimo disparo de cada sonido, para el limitador
+
+  // Sin argumentos es idempotente (asi la llaman los gestos del usuario). Pasarle un
+  // contexto rehace el modulo sobre el: es lo que usa el banco offline para renderizar
+  // los sonidos a PCM y comprobarlos sin que nadie escuche.
+  function init(ctx) {
+    if (ready && !ctx) return;
     const AC = window.AudioContext || window.webkitAudioContext;
-    if (!AC) return;
-    try { ac = new AC(); } catch (e) { return; }
+    if (!ctx && !AC) return;
+    try { ac = ctx || new AC(); } catch (e) { return; }
+    engOsc = engLfo = engGain = null;
+    for (const k in last) delete last[k];
     master = ac.createGain();
-    master.gain.value = muted ? 0 : 0.5;
+    master.gain.value = muted ? 0 : CFG.volMaster;
     master.connect(ac.destination);
     ready = true;
   }
   function resume() { if (ac && ac.state === 'suspended') ac.resume(); }
+  // quiet calla la simulacion, no la interfaz: un toque en un boton durante la demo
+  // sigue haciendo clic, porque ese sonido lo provoca el usuario y no el bot.
+  function audible() { return ready && !muted && !quiet; }
 
-  function blip(type, f0, f1, dur, vol, curve) {
-    if (!ready || muted) return;
+  // Una nota cuadrada agendada en tiempo absoluto del AudioContext.
+  function tone(freq, at, dur, vol) {
+    if (!ready) return;
     const o = ac.createOscillator(), g = ac.createGain();
-    o.type = type;
-    const t = ac.currentTime;
-    o.frequency.setValueAtTime(f0, t);
-    if (curve === 'exp') o.frequency.exponentialRampToValueAtTime(Math.max(20, f1), t + dur);
-    else o.frequency.linearRampToValueAtTime(Math.max(20, f1), t + dur);
-    g.gain.setValueAtTime(vol, t);
-    g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    o.type = 'square';
+    o.frequency.setValueAtTime(Math.max(CFG.volFloorHz, freq), at);
+    g.gain.setValueAtTime(0, at);
+    g.gain.linearRampToValueAtTime(vol, at + CFG.attack);
+    g.gain.setValueAtTime(vol, at + Math.max(CFG.attack, dur - CFG.release));
+    g.gain.linearRampToValueAtTime(0, at + dur);
     o.connect(g); g.connect(master);
-    o.start(t); o.stop(t + dur + 0.02);
+    o.start(at); o.stop(at + dur + 0.005);
   }
-  function noise(dur, vol, filtF) {
-    if (!ready || muted) return;
-    const n = Math.floor(ac.sampleRate * dur);
-    const buf = ac.createBuffer(1, n, ac.sampleRate);
-    const d = buf.getChannelData(0);
-    for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / n);
-    const src = ac.createBufferSource(); src.buffer = buf;
-    const f = ac.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = filtF;
-    const g = ac.createGain(); g.gain.value = vol;
-    src.connect(f); f.connect(g); g.connect(master);
-    src.start();
+
+  // notes = [[Hz, ms], ...] encadenadas desde ahora mismo. Aqui no hay setTimeout a
+  // proposito: un temporizador deriva bajo carga, no se cancela al mutear y no comparte
+  // reloj con el audio. Todo se agenda de golpe sobre ac.currentTime.
+  function seq(notes, vol) {
+    if (!audible()) return;
+    let at = ac.currentTime;
+    for (let i = 0; i < notes.length; i++) {
+      const d = notes[i][1] / 1000;
+      tone(notes[i][0], at, d, vol);
+      at += d;
+    }
+  }
+
+  // La explosion Game & Watch: un tono que se despeña a saltos por la escala. hi y lo
+  // son indices dentro de TONES; el centro baja con el tiempo y se le añade temblor.
+  function scramble(steps, hi, lo, stepMs, vol) {
+    if (!audible()) return;
+    let at = ac.currentTime;
+    const d = stepMs / 1000, top = TONES.length - 1;
+    for (let i = 0; i < steps; i++) {
+      const t = steps > 1 ? i / (steps - 1) : 0;
+      const j = Math.round(hi + (lo - hi) * t + (Math.random() * 2 - 1) * 1.5);
+      tone(TONES[Math.min(top, Math.max(0, j))], at, d, vol * (1 - t * 0.35));
+      at += d;
+    }
+  }
+
+  // Limitador por sonido. shoot() sale de un bucle de autofuego y destroy() puede
+  // dispararse varias veces en el mismo frame; sin esto el resultado es barro. Solo
+  // calla audio repetido: las balas, las rocas y el puntaje no se enteran.
+  function fresh(key, ms) {
+    if (!ready) return false;
+    const t = ac.currentTime;
+    if (last[key] !== undefined && t - last[key] < ms / 1000) return false;
+    last[key] = t;
+    return true;
   }
 
   return {
     init, resume,
+    get tones() { return TONES; },
     get muted() { return muted; },
+    // Callar sin mutear: el modo demo del menu se ve, pero no se oye.
+    get quiet() { return quiet; },
+    set quiet(v) { quiet = !!v; if (quiet) Sfx.engine(false); },
     setMuted(m) {                        // aplica sin guardar: lo usa la carga inicial
       muted = !!m;
-      if (master) master.gain.value = muted ? 0 : 0.5;
+      if (master) master.gain.value = muted ? 0 : CFG.volMaster;
       if (muted) Sfx.engine(false);
       return muted;
     },
@@ -238,61 +420,103 @@ const Sfx = (() => {
       Prefs.saveMuted(muted);
       return muted;
     },
+    // El motor no es un zumbido grave (a 62 Hz un movil no daba nada): es un tableteo.
+    // Una portadora cuadrada que un LFO cuadrado abre y cierra. Dos osciladores y cero
+    // temporizadores; la señal del LFO se suma al valor intrinseco de la ganancia.
     engine(on) {
       if (!ready) return;
-      if (on && !engineOsc && !muted) {
-        engineOsc = ac.createOscillator(); engineGain = ac.createGain();
-        engineOsc.type = 'square'; engineOsc.frequency.value = 62;
-        engineGain.gain.value = 0.0;
-        engineGain.gain.linearRampToValueAtTime(0.06, ac.currentTime + 0.05);
-        engineOsc.connect(engineGain); engineGain.connect(master);
-        engineOsc.start();
-      } else if (!on && engineOsc) {
-        const o = engineOsc, g = engineGain;
-        g.gain.linearRampToValueAtTime(0.0001, ac.currentTime + 0.06);
-        o.stop(ac.currentTime + 0.1);
-        engineOsc = null; engineGain = null;
+      const want = on && !muted && !quiet;
+      if (want && !engOsc) {
+        const t = ac.currentTime, half = CFG.engineVol / 2;
+        engOsc = ac.createOscillator(); engOsc.type = 'square';
+        engOsc.frequency.value = CFG.engineHz;
+        engLfo = ac.createOscillator(); engLfo.type = 'square';
+        engLfo.frequency.value = CFG.enginePulseHz;
+        const depth = ac.createGain(); depth.gain.value = half;
+        engGain = ac.createGain();
+        engGain.gain.setValueAtTime(0, t);
+        engGain.gain.linearRampToValueAtTime(half, t + 0.04);
+        engLfo.connect(depth); depth.connect(engGain.gain);
+        engOsc.connect(engGain); engGain.connect(master);
+        engOsc.start(t); engLfo.start(t);
+      } else if (!want && engOsc) {
+        const t = ac.currentTime, o = engOsc, l = engLfo, g = engGain;
+        g.gain.cancelScheduledValues(t);
+        g.gain.setValueAtTime(g.gain.value, t);
+        g.gain.linearRampToValueAtTime(0, t + 0.05);
+        o.stop(t + 0.07); l.stop(t + 0.07);
+        engOsc = engLfo = engGain = null;
       }
     },
-    shoot()   { blip('square', 900, 340, 0.07, 0.10, 'exp'); },
-    split()   { noise(0.16, 0.28, 1400); },
-    destroy() { noise(0.3, 0.35, 700); blip('triangle', 260, 60, 0.25, 0.14, 'exp'); },
-    pickup()  { blip('square', 520, 1180, 0.14, 0.14, 'exp'); },
-    repair()  { blip('triangle', 440, 660, 0.09, 0.15, 'lin');
-                setTimeout(() => blip('triangle', 660, 880, 0.09, 0.15, 'lin'), 85);
-                setTimeout(() => blip('triangle', 880, 1320, 0.16, 0.15, 'lin'), 170); },
-    damage()  { blip('sawtooth', 240, 70, 0.3, 0.2, 'exp'); noise(0.2, 0.2, 500); },
-    death()   { blip('sawtooth', 420, 40, 0.9, 0.25, 'exp'); noise(0.7, 0.3, 900); },
-    level()   { blip('square', 440, 880, 0.1, 0.13, 'lin'); setTimeout(()=>blip('square',880,1320,0.12,0.13,'lin'),110); },
-    ui()      { blip('square', 660, 660, 0.05, 0.09, 'lin'); },
+
+    // Los ocho efectos. El rango de ganancia es estrecho a proposito (0.07-0.14): lo que
+    // separa un sonido chico de uno grande es cuanto dura, no cuanto suena.
+    ui()      { if (ready && !muted) tone(1760, ac.currentTime, 0.018, 0.07); },
+    shoot()   { if (fresh('shoot', 60)) seq([[2637, 8], [2093, 8], [1568, 8]], 0.08); },
+    destroy() { if (fresh('destroy', 45)) scramble(12, 11, 2, 15, 0.13); },
+    pickup()  { seq([[1047, 40], [1319, 40], [1568, 40]], 0.10); },
+    repair()  { seq([[880, 55], [1047, 55], [1319, 55], [1760, 90]], 0.10); },
+    damage()  { seq([[784, 45], [587, 45], [440, 110]], 0.14); },
+    death()   { seq([[1568, 90], [1319, 90], [1175, 90], [880, 90],
+                     [784, 90], [659, 90], [523, 90], [440, 320]], 0.14); },
+    level()   { seq([[1047, 70], [1319, 70], [1568, 70], [2093, 140]], 0.12); },
   };
 })();
 
-function buzz(ms) { if (navigator.vibrate) { try { navigator.vibrate(ms); } catch (e) {} } }
+// Alcanzable desde fuera: sin esto ni el banco de pruebas ni el test offline pueden
+// tocar el modulo, porque Sfx es un const de ambito de script.
+window.Sfx = Sfx;
+// El modo demo tampoco vibra: hacer temblar el movil en el menu es peor que sonar.
+function buzz(ms) {
+  if (Sfx.quiet) return;
+  if (navigator.vibrate) { try { navigator.vibrate(ms); } catch (e) {} }
+}
 
 /* ============================ canvas ============================ */
 // El juego se dibuja en 'scene', un canvas 2D fuera del DOM y de resolucion
 // baja (CFG.lcdRows filas): los trazos se rasterizan ya del tamano del pixel
 // del LCD. Lo visible es 'cv', el canvas WebGL donde el shader cuantiza esa
 // escena a la paleta del Game Boy y la agranda sin interpolar (§21).
-// Todo el resto del juego sigue midiendo en px CSS (W/H): nada mas cambia.
+// El juego mide en UNIDADES DE MUNDO: H vale siempre CFG.baseHeight y W sale
+// de la relacion de aspecto. Wpx/Hpx son los px CSS reales y SC el puente
+// (1 unidad = SC px CSS); nadie mira Wpx/Hpx salvo el transform y la entrada.
+// Gracias a eso PIX es constante: el punto del LCD siempre mide lo mismo y el
+// buffer tiene siempre las 144 filas de la Game Boy.
 const cv = document.getElementById('screen');
 const scene = document.createElement('canvas');
 const ctx = scene.getContext('2d');
 let trail = document.createElement('canvas');
 let tctx = trail.getContext('2d');
-let W = 0, H = 0, DPR = 1, PIX = 1;
+let W = 0, H = 0, Wpx = 0, Hpx = 0, SC = 1, DPR = 1, PIX = 1;
+
+// Margenes seguros del aparato (notch, isla dinamica, barra de gestos). El lienzo llega
+// hasta el borde fisico; solo el HUD se aparta, para no escribir debajo del recorte.
+const SAFE = { t: 0, r: 0, b: 0, l: 0 };
+const safeEl = document.getElementById('safe');
 
 function resize() {
   DPR = Math.min(window.devicePixelRatio || 1, 2);
-  W = Math.max(1, Math.floor(window.innerWidth));
-  H = Math.max(1, Math.floor(window.innerHeight));
-  PIX = clamp(CFG.lcdRows / H, 0.2, 1);            // 1 = pantalla mas chica que el buffer LCD
+  // visualViewport es lo que se ve de verdad; innerWidth/innerHeight incluyen franjas
+  // que en pantalla completa no estan, y por eso se cortaba la parte de abajo.
+  const vv = window.visualViewport;
+  Wpx = Math.max(1, Math.floor(vv ? vv.width : window.innerWidth));
+  Hpx = Math.max(1, Math.floor(vv ? vv.height : window.innerHeight));
+  if (safeEl) {
+    const s = getComputedStyle(safeEl);
+    SAFE.t = parseFloat(s.paddingTop) || 0;
+    SAFE.r = parseFloat(s.paddingRight) || 0;
+    SAFE.b = parseFloat(s.paddingBottom) || 0;
+    SAFE.l = parseFloat(s.paddingLeft) || 0;
+  }
+  H = CFG.baseHeight;                             // el alto del mundo NO cambia nunca
+  SC = Hpx / H;                                   // px CSS por unidad de mundo
+  W = Wpx / SC;                                   // ... solo cambia cuanto ancho se ve
+  PIX = CFG.lcdRows / CFG.baseHeight;             // constante por construccion
   const bw = Math.max(1, Math.round(W * PIX)), bh = Math.max(1, Math.round(H * PIX));
   for (const c of [scene, trail]) { c.width = bw; c.height = bh; }
   LW = bw;                                        // el hit-test lo necesita antes del primer frame
-  cv.width = Math.floor(W * DPR); cv.height = Math.floor(H * DPR);
-  cv.style.width = W + 'px'; cv.style.height = H + 'px';
+  cv.width = Math.floor(Wpx * DPR); cv.height = Math.floor(Hpx * DPR);
+  cv.style.width = Wpx + 'px'; cv.style.height = Hpx + 'px';
   ctx.setTransform(PIX, 0, 0, PIX, 0, 0);
   ctx.imageSmoothingEnabled = false;
   tctx.setTransform(1, 0, 0, 1, 0, 0);            // la estela se escribe por pixel, sin transform
@@ -302,6 +526,10 @@ function resize() {
 }
 window.addEventListener('resize', resize);
 window.addEventListener('orientationchange', () => setTimeout(resize, 120));
+if (window.visualViewport) {
+  window.visualViewport.addEventListener('resize', resize);
+  window.visualViewport.addEventListener('scroll', resize);
+}
 
 /* ======================= shader LCD Game Boy (§21) =======================
    Un solo paso de post-proceso sobre la escena:
@@ -327,6 +555,7 @@ const LCD = (() => {
     uniform sampler2D src;
     uniform vec2  lcd;            // celdas del LCD (ancho, alto)
     uniform vec3  pal[4];         // paleta, de oscuro a claro
+    uniform vec3  tint;           // filtro del vidrio; (1,1,1) = sin tenir
     uniform float gridK, gap, ditherK, gain, crush;
 
     float bayer2(vec2 a) { a = floor(a); return fract(a.x * 0.5 + a.y * a.y * 0.75); }
@@ -350,7 +579,10 @@ const LCD = (() => {
       vec2 e = min(f, 1.0 - f);
       if (gridK > 0.5 && min(e.x, e.y) < gap) q = max(q - 1.0, 0.0);
 
-      gl_FragColor = vec4(q < 0.5 ? pal[0] : (q < 1.5 ? pal[1] : (q < 2.5 ? pal[2] : pal[3])), 1.0);
+      // el tinte va al final, sobre el tono ya cuantizado: filtra el vidrio,
+      // no la escena, asi que en pantalla siguen habiendo cuatro tonos exactos
+      vec3 col = q < 0.5 ? pal[0] : (q < 1.5 ? pal[1] : (q < 2.5 ? pal[2] : pal[3]));
+      gl_FragColor = vec4(col * tint, 1.0);
     }`;
 
   let gl = null, prog = null, tex = null, fb = null, U = {};
@@ -385,8 +617,9 @@ const LCD = (() => {
     for (const p of [gl.TEXTURE_MIN_FILTER, gl.TEXTURE_MAG_FILTER]) gl.texParameteri(gl.TEXTURE_2D, p, gl.NEAREST);
     for (const p of [gl.TEXTURE_WRAP_S, gl.TEXTURE_WRAP_T]) gl.texParameteri(gl.TEXTURE_2D, p, gl.CLAMP_TO_EDGE);
 
-    for (const n of ['src', 'lcd', 'gridK', 'gap', 'ditherK', 'gain', 'crush']) U[n] = gl.getUniformLocation(prog, n);
+    for (const n of ['src', 'lcd', 'gridK', 'gap', 'ditherK', 'gain', 'crush', 'tint']) U[n] = gl.getUniformLocation(prog, n);
     gl.uniform1i(U.src, 0);
+    gl.uniform3f(U.tint, 1, 1, 1);       // arranca sin tenir; Tint lo pisa al cargar la preferencia
     gl.uniform1f(U.gridK, CFG.lcdGrid);
     gl.uniform1f(U.ditherK, CFG.dither);
     gl.uniform1f(U.gain, CFG.lcdGain);
@@ -404,8 +637,18 @@ const LCD = (() => {
   // Se pierde la paleta, no el pixelado ni el juego.
   if (!gl) fb = cv.getContext('2d');
 
+  // Filtro del vidrio: multiplica el color ya cuantizado. Se guarda en CSS
+  // ademas de en el uniform porque el camino sin WebGL lo pinta a mano.
+  let tintCss = '';
+
   return {
     get ok() { return !!gl; },
+    setTint(rgb) {
+      const [r, g, b] = rgb;
+      tintCss = (r > 0.999 && g > 0.999 && b > 0.999)
+        ? '' : 'rgb(' + [r, g, b].map(c => Math.round(c * 255)).join(',') + ')';
+      if (gl) { gl.useProgram(prog); gl.uniform3f(U.tint, r, g, b); }
+    },
     resize() {
       if (gl) gl.viewport(0, 0, cv.width, cv.height);
       else if (fb) fb.imageSmoothingEnabled = false;
@@ -416,6 +659,12 @@ const LCD = (() => {
         fb.imageSmoothingEnabled = false;
         fb.clearRect(0, 0, cv.width, cv.height);
         fb.drawImage(scene, 0, 0, cv.width, cv.height);
+        if (tintCss) {                       // sin shader el tinte se multiplica encima
+          fb.globalCompositeOperation = 'multiply';
+          fb.fillStyle = tintCss;
+          fb.fillRect(0, 0, cv.width, cv.height);
+          fb.globalCompositeOperation = 'source-over';
+        }
         return;
       }
       gl.bindTexture(gl.TEXTURE_2D, tex);
@@ -426,6 +675,65 @@ const LCD = (() => {
       gl.uniform1f(U.gap, clamp(0.5 / cellPx, 0.04, 0.12));
       gl.drawArrays(gl.TRIANGLES, 0, 3);
     }
+  };
+})();
+
+/* ==================== tinte de la pantalla (§21.1) ====================
+   Easter egg. La consola nunca cambiaba de paleta: cambiaba el vidrio, y por
+   eso esto no toca ni los cuatro tonos ni el juego. El shader cuantiza igual
+   que siempre y el color se multiplica al final, asi que en pantalla siguen
+   habiendo cuatro tonos exactos, solo que tenidos.
+   Se destapa tocando el titulo del menu CFG.tintTaps veces seguidas (o con la
+   tecla T en escritorio) y cada vez pasa al siguiente hue de la lista. El
+   elegido se guarda, asi que el vidrio sigue puesto al reabrir el juego.
+   ==================================================================== */
+const Tint = (() => {
+  const list = CFG.tints;
+  let idx = 0, osd = 0, taps = 0, lastTap = 0;
+
+  // hue -> color puro (HSV con s=v=1) aclarado hacia el blanco segun
+  // CFG.tintSat: el filtro tine, no repinta. Con el blanco puro no hay filtro.
+  function rgb() {
+    const h = list[idx].hue;
+    if (!(h >= 0)) return [1, 1, 1];
+    const f = n => {
+      const k = (n + h / 60) % 6;
+      return 1 - Math.max(0, Math.min(k, 4 - k, 1));
+    };
+    const s = CFG.tintSat;
+    return [f(5), f(3), f(1)].map(c => 1 - s + s * c);
+  }
+  function apply() { LCD.setTint(rgb()); }
+
+  function set(name) {
+    const i = list.findIndex(t => t.name === name);
+    idx = i < 0 ? 0 : i;                       // nombre viejo o vacio: vidrio limpio
+    apply();
+  }
+  function cycle() {
+    idx = (idx + 1) % list.length;
+    apply();
+    Prefs.saveTint(list[idx].name);
+    osd = CFG.tintOsdTime;
+    return list[idx].name;
+  }
+  // Los toques sueltos no hacen nada y no suenan: solo el ultimo de la
+  // secuencia cambia el vidrio, o dejaria de ser un secreto.
+  function tap() {
+    const now = performance.now();
+    taps = (now - lastTap > CFG.tintTapWindow * 1000) ? 1 : taps + 1;
+    lastTap = now;
+    if (taps < CFG.tintTaps) return false;
+    taps = 0;
+    cycle();
+    return true;
+  }
+
+  return {
+    set, cycle, tap,
+    get name() { return list[idx].name; },
+    get osd()  { return osd; },
+    tick(dt) { if (osd > 0) osd = Math.max(0, osd - dt); }
   };
 })();
 
@@ -455,33 +763,126 @@ const Input = {
 };
 const Key = { left: false, right: false };
 
+/* ========================= navegacion de menus (§4.2) =========================
+   Los menus se manejan con los mismos dos controles que la nave: un lado mueve
+   la seleccion y los dos juntos eligen.
+
+   El problema de leer los flancos sueltos es que dos dedos nunca aterrizan en
+   el mismo milisegundo: el que llega primero se lee como "un lado" y mueve la
+   seleccion, y recien despues se lee "los dos" y elige. Un solo gesto termina
+   haciendo dos cosas.
+
+   Por eso el gesto NO se resuelve mientras haya algo apretado: se acumula
+   quien se toco y se decide al soltar todo. Si en algun momento estuvieron los
+   dos, es elegir y no hubo movimiento. La unica excepcion es mantener un lado
+   apretado mas de chordWait sin el otro: ahi ya no puede ser un acorde, asi
+   que se mueve en el acto y arranca la repeticion.
+   ==================================================================== */
+const Nav = (() => {
+  let open = false, sawBoth = false, dir = 0, age = 0, moved = false, repeat = 0;
+  let blocked = false;
+
+  function reset() { open = false; sawBoth = false; dir = 0; age = 0; moved = false; repeat = 0; }
+
+  // Al cambiar de pantalla hay que soltar todo antes de que la nueva escuche:
+  // si no, morir con los dos motores apretados elegiria solo en GAME OVER.
+  function armAfterRelease() { reset(); blocked = true; }
+
+  // Devuelve { move: -1 | 0 | 1, select: bool } una sola vez por evento.
+  function update(dt) {
+    const L = Input.left, R = Input.right;
+    const out = { move: 0, select: false };
+
+    if (!L && !R) {                       // se solto todo: recien ahora se decide
+      if (blocked) { blocked = false; reset(); return out; }
+      if (open) {
+        if (sawBoth) out.select = true;
+        else if (!moved && dir) out.move = dir;
+      }
+      reset();
+      return out;
+    }
+
+    if (blocked) return out;
+    if (!open) { reset(); open = true; }
+    age += dt;
+    if (L && R) sawBoth = true;
+    else if (!sawBoth) dir = L ? -1 : 1;
+
+    if (sawBoth) return out;              // ya es acorde: solo falta soltar
+    if (!moved && age >= CFG.chordWait) { // mantenido: ya no puede ser acorde
+      out.move = dir; moved = true; repeat = CFG.repeatFirst;
+    } else if (moved) {
+      repeat -= dt;
+      if (repeat <= 0) { out.move = dir; repeat = CFG.repeatNext; }
+    }
+    return out;
+  }
+
+  return { update, armAfterRelease };
+})();
+
 function pos(e) {
+  // el dedo llega en px CSS; el juego solo entiende unidades de mundo
   const r = cv.getBoundingClientRect();
-  return { x: e.clientX - r.left, y: e.clientY - r.top };
+  return { x: (e.clientX - r.left) / SC, y: (e.clientY - r.top) / SC };
 }
 cv.addEventListener('pointerdown', e => {
-  cv.setPointerCapture && cv.setPointerCapture(e.pointerId);
   const p = pos(e);
+  try { cv.setPointerCapture(e.pointerId); } catch (err) {}
   // se decide aca, no en el frame: el dedo queda marcado mientras siga apoyado
   if (muteActive() && hit(muteBox(), p)) p.ui = true;
   Input.pointers.set(e.pointerId, p);
-  Input.tapPos = p;
+  Input.tapPos = { x: p.x, y: p.y };
   Input.lastTouch = performance.now();
   Sfx.init(); Sfx.resume();
   e.preventDefault();
 }, { passive: false });
 cv.addEventListener('pointermove', e => {
+  // el mouse se solto fuera de la ventana y nunca nos llego el up: el primer
+  // movimiento sin botones apretados lo delata
+  if (e.pointerType === 'mouse' && e.buttons === 0) { drop(e); return; }
   const old = Input.pointers.get(e.pointerId);
   if (!old) return;
   const p = pos(e);
   if (old.ui) p.ui = true;          // moverse un pixel no convierte el boton en motor
   Input.pointers.set(e.pointerId, p);
 }, { passive: false });
+
+/* ---------------- red de seguridad contra motores trabados (§4.3) ----------
+   Un motor que se queda encendido solo es un puntero que quedo en el mapa sin
+   su pointerup. Pasa mas de lo que parece: el navegador se queda el gesto, se
+   pierde la captura del puntero, la app se va a segundo plano con el dedo
+   apoyado, o se suelta una tecla con la ventana sin foco. Ninguno de esos
+   casos avisa por el camino normal, asi que hay que cerrarlos uno por uno.
+   -------------------------------------------------------------------- */
 function drop(e) { Input.pointers.delete(e.pointerId); }
-cv.addEventListener('pointerup', drop);
-cv.addEventListener('pointercancel', drop);
+function releaseLocalPointers() {           // los remotos tienen llave de texto
+  for (const k of [...Input.pointers.keys()]) if (typeof k !== 'string') Input.pointers.delete(k);
+}
+function releaseAll() {
+  Input.pointers.clear();
+  Key.left = false; Key.right = false;      // el blur solo limpiaba los punteros
+}
+
+for (const t of ['pointerup', 'pointercancel']) {
+  cv.addEventListener(t, drop);
+  window.addEventListener(t, drop);         // por si el up cae fuera del canvas
+}
 cv.addEventListener('pointerleave', drop);
-window.addEventListener('blur', () => Input.pointers.clear());
+cv.addEventListener('lostpointercapture', drop);
+
+// Los eventos de toque traen la lista completa de dedos vivos: si no queda
+// ninguno, no puede quedar ningun puntero local apretado. Es la unica
+// reconciliacion que el navegador nos regala, y no depende de pointerup.
+const noTouchesLeft = e => { if (e.touches && e.touches.length === 0) releaseLocalPointers(); };
+window.addEventListener('touchend', noTouchesLeft, { passive: true });
+window.addEventListener('touchcancel', noTouchesLeft, { passive: true });
+
+window.addEventListener('blur', releaseAll);
+window.addEventListener('pagehide', releaseAll);
+// El cambio de app (visibilitychange) lo cubre el handler del arranque, que
+// ademas tiene que apagar el motor: dos oyentes del mismo evento se pisan.
 
 // Teclado, util para probar en escritorio
 window.addEventListener('keydown', e => {
@@ -489,6 +890,7 @@ window.addEventListener('keydown', e => {
   if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') Key.left = true;
   if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') Key.right = true;
   if (e.key === ' ') { Key.left = true; Key.right = true; }
+  if (e.key === 't' || e.key === 'T') Tint.cycle();   // el mismo easter egg, sin tocar el titulo
   Input.lastTouch = performance.now();
   Sfx.init(); Sfx.resume();
 });
@@ -705,6 +1107,7 @@ function startGame(attract) {
   G.time = 0; G.spawnTimer = 0; G.refill = 1.6;
   G.flash = 0; G.levelBanner = 0; G.timeScale = 1; G.deathTimer = 0;
   G.attract = !!attract;
+  Sfx.quiet = G.attract;            // la demo del menu se ve, pero no se oye ni vibra
   G.ship = newShip(W / 2, H / 2);
   G.ship.vx = Math.cos(G.ship.a) * CFG.shipMaxSpeed * 0.7;
   G.ship.vy = Math.sin(G.ship.a) * CFG.shipMaxSpeed * 0.7;
@@ -1003,7 +1406,7 @@ const LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
 
 function endRun() {
   const list = Store.cached().slice();
-  const entry = { i: 'AAA', s: Math.floor(G.score), l: G.level, m: 1 };
+  const entry = { i: 'AAA', s: Math.floor(G.score), l: G.level };
   const qualifies = list.length < CFG.maxScores || entry.s > list[list.length - 1].s;
   hs.pending = qualifies ? entry : null;
   screen = SCREEN.DEAD;
@@ -1014,10 +1417,8 @@ async function commitInitials() {
   e.i = hs.initials.map(i => LETTERS[i]).join('');
   const list = Store.cached().slice();
   list.push(e);
-  list.sort((a, b) => b.s - a.s);           // ordenado por puntaje, nunca por nivel (§12.6)
-  while (list.length > CFG.maxScores) list.pop();
-  hs.list = list;
-  await Store.save(list);
+  await Store.save(list);                   // ordena por puntaje, nunca por nivel (§12.6), recorta y firma
+  hs.list = Store.cached();
   hs.pending = null;
   hs.fromRun = true;
   screen = SCREEN.SCORES;
@@ -1227,11 +1628,20 @@ const LH = () => scene.height;                 // alto: siempre CFG.lcdRows
 function uiBegin() { ctx.setTransform(1, 0, 0, 1, 0, 0); LW = scene.width; }
 function uiEnd()   { ctx.setTransform(PIX, 0, 0, PIX, 0, 0); }
 
-// Los botones se guardan en px CSS porque los toques llegan en px CSS.
-function cssBox(x, y, w, h, label) {
+// La interfaz se dibuja en puntos de LCD, pero los toques llegan en unidades
+// de mundo: las cajas de los botones se guardan convertidas.
+function worldBox(x, y, w, h, label) {
   return { x: x / PIX, y: y / PIX, w: w / PIX, h: h / PIX, label };
 }
-function pushBtn(label, x, y, w, h) { G.buttons.push(cssBox(x, y, w, h, label)); }
+// Margenes seguros del aparato, pasados a pixeles de LCD: SAFE viene en px CSS y la UI
+// se dibuja en el buffer. El juego llega al borde fisico; solo el HUD se aparta, para
+// que el marcador y el boton de sonido no queden debajo del notch o de la isla.
+// El puente CSS -> LCD es PIX/SC: a px CSS constantes, en una pantalla mas alta
+// el recorte se come menos filas del LCD, porque el LCD siempre tiene 144.
+const cssToLcd = () => PIX / SC;
+function safeX() { return Math.round(SAFE.l * cssToLcd()); }
+function safeY() { return Math.round(SAFE.t * cssToLcd()); }
+function safeW() { return Math.round(SAFE.r * cssToLcd()); }
 function hit(b, t) { return t && t.x >= b.x && t.x <= b.x + b.w && t.y >= b.y && t.y <= b.y + b.h; }
 // Un boton esta "apretado" mientras haya un dedo encima: es el estado
 // resaltado de los menus de la Game Boy y ademas da respuesta al toque.
@@ -1240,6 +1650,28 @@ function pressed(box) {
   return false;
 }
 const blink = (ms) => Math.sin(performance.now() / (ms || 250)) > 0;
+
+/* Seleccion del menu. Las filas las publica el dibujo (menuBox) porque son las
+   que cambian por pantalla; la navegacion las lee despues, cuando ya estan. */
+const Menu = {
+  sel: 0,
+  rows: [],
+  _key: '',
+  // Si cambio el juego de opciones, la seleccion vuelve arriba.
+  offer(rows) {
+    const key = rows.join('|');
+    if (key !== this._key) { this._key = key; this.sel = 0; }
+    this.rows = rows;
+  },
+  move(d) {
+    if (this.rows.length < 2) return false;
+    this.sel = (this.sel + d + this.rows.length) % this.rows.length;
+    return true;
+  },
+  chosen() { return this.rows[this.sel]; },
+  // el toque manda: la fila que se toca pasa a ser la elegida
+  syncTo(label) { const i = this.rows.indexOf(label); if (i >= 0) this.sel = i; }
+};
 
 /* ---------------------------- fuente bitmap ----------------------------
    5x7 con avance de 6: es lo que entraba en el tile de 8x8 del hardware,
@@ -1387,24 +1819,30 @@ function winBox(x, y, w, h, inverted) {
   ctx.fillRect(x + w - 1, y + 1, 1, h - 2);
 }
 
-// Fila de menu dentro de un cuadro: cursor ▶ parpadeando en la opcion
-// principal, y la fila entera en negativo mientras el dedo la aprieta.
-function menuRow(label, x, y, w, primary) {
+// Fila de menu dentro de un cuadro: cursor ▶ parpadeando en la fila elegida,
+// y la fila entera en negativo mientras el dedo la aprieta.
+function menuRow(label, x, y, w, chosen) {
   const h = 12;
-  const box = cssBox(x, y, w, h, label);
+  const box = worldBox(x, y, w, h, label);
   const on = pressed(box);
   if (on) { ctx.fillStyle = TONE[3]; ctx.fillRect(x, y, w, h); }
-  if (primary && !on) text('▶', x + 3, y + 3, 1, 'left', 2 + (blink(320) ? 1 : 0));
+  if (chosen && !on) text('▶', x + 3, y + 3, 1, 'left', 2 + (blink(320) ? 1 : 0));
   text(label, x + w / 2 + 4, y + 3, 1, 'center', on ? 0 : 3);
   G.buttons.push(box);
 }
 
-// Cuadro de menu completo: las filas ya vienen alineadas a la rejilla.
+// Cuadro de menu completo: las filas ya vienen alineadas a la rejilla. Publica
+// sus etiquetas en Menu para que la navegacion con los motores sepa que hay.
 function menuBox(rows, cx, top, w) {
   const h = 6 + rows.length * 12;
   const x = Math.round(cx - w / 2);
+  Menu.offer(rows);
   winBox(x, top, w, h);
-  rows.forEach((r, i) => menuRow(r, x + 2, top + 3 + i * 12, w - 4, i === 0));
+  rows.forEach((r, i) => menuRow(r, x + 2, top + 3 + i * 12, w - 4, i === Menu.sel));
+  // la ayuda solo si hay donde: en records el cuadro ya va pegado abajo
+  if (rows.length > 1 && top + h + 4 + Font.GH <= LH()) {
+    text('L/R — MOVE     BOTH — SELECT', cx, top + h + 4, 1, 'center', 1);
+  }
   return top + h;
 }
 
@@ -1434,10 +1872,10 @@ function icon(bits, x, y, s, tone) {
    el icono y se calcula en un solo lugar.
    -------------------------------------------------------------------- */
 const MUTE_SCALE = 2;
-const muteIcon = () => ({ x: LW - 2 * T - 4, y: 4, s: MUTE_SCALE });
+const muteIcon = () => ({ x: LW - safeW() - 2 * T - 4, y: safeY() + 4, s: MUTE_SCALE });
 function muteBox() {
   const m = muteIcon(), pad = 5;
-  return cssBox(m.x - pad, m.y - pad, 8 * m.s + 2 * pad, 8 * m.s + 2 * pad, 'MUTE');
+  return worldBox(m.x - pad, m.y - pad, 8 * m.s + 2 * pad, 8 * m.s + 2 * pad, 'MUTE');
 }
 function muteActive() {
   return screen === SCREEN.PLAY || screen === SCREEN.MENU
@@ -1449,10 +1887,31 @@ function drawMuteButton() {
   G.buttons.push(muteBox());
 }
 
-/* ------------------------------ ayudas fijas ---------------------------- */
-function drawControlLines(bottom, tone) {
-  const lines = ['LEFT SIDE - LEFT THRUSTER', 'RIGHT SIDE - RIGHT THRUSTER', 'BOTH SIDES - BRAKE'];
-  lines.forEach((l, i) => text(l, LW / 2, bottom - (lines.length - i) * T, 1, 'center', tone === undefined ? 1 : tone));
+/* ------------------------------ ayudas fijas ----------------------------
+   Las pistas van en un solo renglon pegado al borde de abajo y en el mismo
+   orden que los controles: el motor izquierdo en la esquina izquierda, el
+   freno al medio y el derecho en la derecha. La posicion ES la explicacion,
+   asi que ocupan una franja en vez de tres y ademas ensenan donde tocar.
+   Si no entran a lo ancho se prueba la version corta, y si tampoco entra no
+   se dibuja nada: mejor sin pistas que con las palabras encimadas.
+   -------------------------------------------------------------------- */
+const HINT_SETS = [
+  ['LEFT THRUST', 'BOTH = BRAKE', 'RIGHT THRUST'],
+  ['LEFT', 'BRAKE', 'RIGHT'],
+];
+function drawControlHints(y, tone) {
+  const t = tone === undefined ? 1 : tone;
+  const edge = T, gap = 6, cx = LW / 2;
+  for (const [l, c, r] of HINT_SETS) {
+    const wl = Font.width(l, 1), wc = Font.width(c, 1), wr = Font.width(r, 1);
+    const cLeft = cx - wc / 2, cRight = cx + wc / 2;
+    if (edge + wl + gap > cLeft) continue;              // el bloque de la izquierda pisa el del medio
+    if (cRight + gap > LW - edge - wr) continue;        // ... o el del medio pisa el de la derecha
+    text(l, edge, y, 1, 'left', t);
+    text(c, cx, y, 1, 'center', t);
+    text(r, LW - edge, y, 1, 'right', t);
+    return;
+  }
 }
 
 // Codigo de emparejamiento del celular. SOLO en las pantallas quietas: durante
@@ -1474,22 +1933,42 @@ function drawLinkCode(x, y, s, align) {
 }
 
 /* ------------------------------- pantallas ------------------------------ */
+// En pantallas angostas (4:3) el titulo a escala 2 se metia debajo del icono de
+// sonido: si no entra dejando libres las esquinas, baja a escala 1. El area del
+// tinte usa la misma medida, si no en esas pantallas quedaria mas ancha que el
+// titulo que la disimula.
+const TITLE = 'MY SPACE DRIFT';
+const titleScale = () => (Font.width(TITLE, 2) <= LW - 5 * T ? 2 : 1);
+
+// El titulo es el boton escondido del tinte (§21.1): no se dibuja distinto ni
+// responde al toque suelto, solo cuenta. El area se corta antes del boton de
+// sonido, que en pantallas angostas le queda encima.
+function tintBox() {
+  const w = Font.width(TITLE, titleScale());
+  const x = Math.round(LW / 2 - w / 2);
+  const right = Math.min(x + w, muteIcon().x - 6);   // el boton de sonido manda, se mueva donde se mueva
+  return worldBox(x, 0, Math.max(8, right - x), 3 * T, 'TINT');
+}
+
 function drawMenu() {
   const cx = LW / 2;
-  text('MY SPACE DRIFT', cx, T, 2, 'center', 3);
+  const ts = titleScale(), tw = Font.width(TITLE, ts);
+  text(TITLE, cx, T, ts, 'center', 3);
+  G.buttons.push(tintBox());
   ctx.fillStyle = TONE[2];
-  ctx.fillRect(Math.round(cx - 56), 3 * T + 2, 112, 1);
+  ctx.fillRect(Math.round(cx - tw / 2), T + Font.GH * ts + 3, tw, 1);
+  if (Tint.osd > 0) text('TINT ' + Tint.name, cx, 3 * T + 6, 1, 'center', 2);
   menuBox(['PLAY', 'HIGH SCORES'], cx, 5 * T, 112);
   if (G.attract) text('DEMO', T / 2, T / 2, 1, 'left', 2);
   else drawLinkCode(cx, 11 * T, 2, 'center');   // el codigo se lee desde el sillon
-  drawControlLines(LH() - 2, 1);
+  drawControlHints(LH() - 2 - Font.GH - safeY(), 1);
   drawMuteButton();
 }
 
 function drawHud() {
   // franja de estado: es la window layer de la Game Boy, arriba y fija
-  text('SCORE ' + String(Math.floor(G.score)).padStart(6, '0'), T / 2, T / 2, 1, 'left', 3);
-  text('LV ' + G.level, LW - 3 * T - 2, T / 2, 1, 'right', 3);
+  text('SCORE ' + String(Math.floor(G.score)).padStart(6, '0'), safeX() + T / 2, safeY() + T / 2, 1, 'left', 3);
+  text('LV ' + G.level, LW - safeW() - 3 * T - 2, safeY() + T / 2, 1, 'right', 3);
   drawMuteButton();
   if (G.levelBanner > 0 && blink(140)) {
     text('LEVEL ' + G.level, LW / 2, LH() / 2 - 7, 2, 'center', 3);
@@ -1507,6 +1986,7 @@ function drawDead() {
     menuBox(['PLAY AGAIN', 'MENU'], cx, 10 * T, 112);
   }
   drawLinkCode(T / 2, 2, 1);
+  drawControlHints(LH() - 2 - Font.GH - safeY(), 1);   // recien murio: es cuando mas sirven
   drawMuteButton();
 }
 
@@ -1564,53 +2044,75 @@ function handleHudTap(t) {
   return true;
 }
 
+// Lo que hace cada opcion, sin importar si llego por toque o por los motores.
+function activate(label) {
+  if (!label) return false;
+  Sfx.init(); Sfx.resume(); Sfx.ui();
+  if (label === 'MUTE') { Sfx.toggleMute(); return true; }
+  if (label === 'PLAY') { G.attract = false; startGame(false); return true; }
+  if (label === 'HIGH SCORES') { hs.fromRun = false; screen = SCREEN.SCORES; return true; }
+  if (label === 'BACK') { screen = SCREEN.MENU; Input.lastTouch = performance.now(); return true; }
+  if (label === 'PLAY AGAIN') { startGame(false); return true; }
+  if (label === 'MENU') { screen = SCREEN.MENU; Input.lastTouch = performance.now(); return true; }
+  return false;
+}
+
 function handleMenuTap(t) {
   for (const b of G.buttons) {
     if (!hit(b, t)) continue;
-    Sfx.init(); Sfx.resume(); Sfx.ui();
-    if (b.label === 'MUTE') { Sfx.toggleMute(); return true; }
-    if (b.label === 'PLAY') { G.attract = false; startGame(false); return true; }
-    if (b.label === 'HIGH SCORES') { hs.fromRun = false; screen = SCREEN.SCORES; return true; }
-    if (b.label === 'BACK') { screen = SCREEN.MENU; Input.lastTouch = performance.now(); return true; }
-    if (b.label === 'PLAY AGAIN') { startGame(false); return true; }
-    if (b.label === 'MENU') { screen = SCREEN.MENU; Input.lastTouch = performance.now(); return true; }
+    // el titulo se come el toque en silencio hasta completar la secuencia
+    if (b.label === 'TINT') {
+      if (Tint.tap()) { Sfx.init(); Sfx.resume(); Sfx.level(); buzz(20); }
+      return true;
+    }
+    Menu.syncTo(b.label);            // el toque manda: el cursor lo sigue
+    return activate(b.label);
   }
   return false;
 }
 
-function updateInitials(dt) {
-  const inc = (d) => {
-    hs.initials[hs.slot] = (hs.initials[hs.slot] + d + 26) % 26;
+// Cortar el modo demo: se vuelve al menu con el campo limpio.
+function quitAttract() {
+  G.attract = false;
+  Sfx.quiet = false;                  // la demo estaba callada; el menu vuelve a sonar
+  G.ship = null;
+  G.meteors.length = 0; G.bullets.length = 0; G.pickups.length = 0;
+  G.shards.length = 0; G.rings.length = 0;
+  Sfx.engine(false);
+}
+
+function updateInitials(nav) {
+  if (nav.move) {
+    hs.initials[hs.slot] = (hs.initials[hs.slot] + nav.move + 26) % 26;
     Sfx.ui();
-  };
-  if (Input.edgeBoth) {
+  }
+  if (nav.select) {
     hs.slot++;
     Sfx.ui(); buzz(15);
     if (hs.slot > 2) { hs.slot = 2; commitInitials(); }
-    hs.holdDir = 0;
-    return;
   }
-  const L = Input.left && !Input.right, R = Input.right && !Input.left;
-  if (Input.edgeLeft && !Input.right)  { inc(-1); hs.holdDir = -1; hs.holdT = 0.34; }
-  if (Input.edgeRight && !Input.left)  { inc(1);  hs.holdDir = 1;  hs.holdT = 0.34; }
-  if ((hs.holdDir === -1 && L) || (hs.holdDir === 1 && R)) {
-    hs.holdT -= dt;
-    if (hs.holdT <= 0) { inc(hs.holdDir); hs.holdT = 0.11; }
-  } else if (!L && !R) hs.holdDir = 0;
 }
 
 /* ============================ loop ============================ */
 let last = performance.now();
 let deadHold = 0;
+let navScreen = null;
 
 function frame(now) {
   let dt = (now - last) / 1000;
   last = now;
   dt = clamp(dt, 0, 0.05);              // sin pausa: si la app pierde foco, se reanuda seco (§14)
 
+  Link.tick(now);                       // suelta los motores si el celular dejo de latir
   Input.update();
+  Tint.tick(dt);
   const tap = Input.consumeTap();
   G.buttons = [];
+  Menu.rows = [];                       // las repone el dibujo de esta pantalla
+
+  // Al cambiar de pantalla hay que soltar todo antes de que la nueva escuche
+  if (screen !== navScreen) { navScreen = screen; Nav.armAfterRelease(); }
+  const nav = Nav.update(dt);
 
   // orientacion (§12.7)
   if (H > W && screen !== SCREEN.ROTATE) { prevScreen = screen; screen = SCREEN.ROTATE; }
@@ -1621,7 +2123,7 @@ function frame(now) {
   else if (screen === SCREEN.MENU) {
     if (G.attract) updatePlay(dt * G.timeScale);
     else if (now - Input.lastTouch > CFG.attractDelay * 1000) startGame(true);
-  } else if (screen === SCREEN.INITIALS) updateInitials(dt);
+  } else if (screen === SCREEN.INITIALS) updateInitials(nav);
   else if (screen === SCREEN.DEAD) {
     deadHold += dt;
     if (hs.pending && deadHold > 1.5) { hs.initials = [0, 0, 0]; hs.slot = 0; screen = SCREEN.INITIALS; }
@@ -1662,6 +2164,18 @@ function frame(now) {
   // la escena de baja resolucion pasa por el LCD: paleta, trama y reticula
   LCD.present();
 
+  // ---------- navegacion con los motores ----------
+  // Va despues del dibujo porque es el dibujo el que publica las filas.
+  if (nav.move || nav.select) {
+    Input.lastTouch = now;
+    if (screen === SCREEN.MENU && G.attract) {
+      quitAttract();                     // tocar un motor tambien corta la demo
+    } else if (screen === SCREEN.MENU || screen === SCREEN.DEAD || screen === SCREEN.SCORES) {
+      if (nav.move && Menu.move(nav.move)) Sfx.ui();
+      if (nav.select) { buzz(15); activate(Menu.chosen()); }
+    }
+  }
+
   // ---------- taps de menu ----------
   if (tap) {
     if (screen === SCREEN.PLAY) {
@@ -1670,7 +2184,13 @@ function frame(now) {
       Input.lastTouch = now;
       // el boton de sonido gana al toque que corta la demo
       if (G.attract) {
-        if (!handleHudTap(tap)) { G.attract = false; G.ship = null; G.meteors.length = 0; G.bullets.length = 0; G.pickups.length = 0; G.shards.length = 0; G.rings.length = 0; Sfx.engine(false); }
+        if (!handleHudTap(tap)) {
+          // ...y el titulo tambien: el toque corta la demo Y cuenta para el
+          // tinte (§21.1). Si no contara, con la demo puesta harian falta
+          // cinco toques en vez de cuatro y el easter egg no saldria nunca.
+          if (hit(tintBox(), tap) && Tint.tap()) { Sfx.init(); Sfx.resume(); Sfx.level(); buzz(20); }
+          quitAttract();
+        }
       } else handleMenuTap(tap);
     } else if (screen === SCREEN.SCORES || screen === SCREEN.DEAD) {
       handleMenuTap(tap);
@@ -1683,9 +2203,13 @@ function frame(now) {
 /* ==================== enlace TV <-> celular (§20) ====================
    Misma URL en los dos aparatos. La TV se abre normal y muestra un codigo
    de 6 digitos; el celular se abre con ?ctrl, escribes ese codigo y se
-   conecta solo. El handshake pasa por el servidor publico de PeerJS (hace
-   falta internet una vez), pero los datos del control viajan directo por
-   WebRTC, asi que en la misma red el retraso es de milisegundos.
+   conecta solo. El handshake pasa por el servidor publico de PeerJS y los
+   datos del control van por WebRTC: si los dos aparatos estan en la misma
+   red el trafico es directo, y si no lo estan (celular con datos, tele por
+   ethernet, cada uno en su casa) sale por los STUN/TURN de ICE. No hace
+   falta LAN comun, hace falta internet en los dos lados.
+   El codigo es el mismo entre recargas: se guarda y con el viaja el top 10
+   (§12.7), asi que recargar la tele no rompe el enlace ni borra la tabla.
    El celular manda las coordenadas normalizadas de sus dedos y la TV las
    mete en Input.pointers: para el juego es identico a tocar la pantalla.
    El codigo NO se dibuja aca: el modulo solo publica su estado con status()
@@ -1695,7 +2219,23 @@ function frame(now) {
 const Link = (() => {
   const IS_CTRL = new URLSearchParams(location.search).has('ctrl');
   const PREFIX  = 'vdrift-';
-  const LS_KEY  = 'vdrift.lastcode';
+  const LS_KEY  = 'vdrift.lastcode';   // celular: ultimo codigo tecleado
+  const LS_TV   = 'vdrift.tvcode';     // tele: su codigo, estable entre recargas
+  // STUN descubre la IP publica y alcanza para casi todas las redes; TURN es
+  // el plan B cuando el NAT no deja pasar nada directo (datos moviles con
+  // CGNAT, wifi de hotel, redes de empresa) y hace de relevo. Sin esto el
+  // enlace solo era fiable dentro de la misma LAN.
+  const ICE = {
+    iceServers: [
+      { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302',
+               'stun:stun.cloudflare.com:3478'] },
+      { urls: ['turn:openrelay.metered.ca:80', 'turn:openrelay.metered.ca:443',
+               'turns:openrelay.metered.ca:443?transport=tcp'],
+        username: 'openrelayproject', credential: 'openrelayproject' },
+      { urls: ['turn:staticauth.openrelay.metered.ca:80'],
+        username: 'openrelayproject', credential: 'openrelayproject' }
+    ]
+  };
   let peer = null, conn = null, myCode = '', tries = 0;
   const state = { code: '', linked: false, linkedAt: 0, error: '' };
 
@@ -1707,18 +2247,38 @@ const Link = (() => {
   };
   const digits6 = () => String(Math.floor(100000 + Math.random() * 900000));
   const ctrlUrl = () => location.origin + location.pathname + '?ctrl';
+  const remember = c => { try { localStorage.setItem(LS_TV, c); } catch (e) {} };
+
+  // El codigo de la tele se genera una sola vez y queda guardado. Se pide
+  // antes de abrir el peer porque el top 10 cuelga de el (§12.7).
+  function deviceCode() {
+    if (myCode) return myCode;
+    let saved = '';
+    try { saved = localStorage.getItem(LS_TV) || ''; } catch (e) {}
+    myCode = /^\d{6}$/.test(saved) ? saved : digits6();
+    if (myCode !== saved) remember(myCode);
+    return myCode;
+  }
 
   /* ------------------------- lado PANTALLA (TV) ------------------------- */
   function unlink() { conn = null; clearRemote(); state.linked = false; }
 
   function openPeer() {
-    myCode = digits6();
-    peer = new Peer(PREFIX + myCode);
+    peer = new Peer(PREFIX + deviceCode(), { config: ICE });
 
     peer.on('open', () => { state.code = myCode; state.error = ''; });
 
     peer.on('error', err => {
-      if (err.type === 'unavailable-id' && tries++ < 6) { peer.destroy(); openPeer(); return; }
+      // el id guardado ya lo tiene otra pantalla abierta: se saca uno nuevo,
+      // se guarda y el top 10 se muda con el
+      if (err.type === 'unavailable-id' && tries++ < 6) {
+        peer.destroy();
+        myCode = digits6();
+        remember(myCode);
+        Store.rekey(myCode);
+        openPeer();
+        return;
+      }
       state.code = '';
       state.error = err.type;
     });
@@ -1750,11 +2310,23 @@ const Link = (() => {
     }
   }
 
+  // Si el celular deja de latir con dedos apoyados es que se durmio, se fue a
+  // segundo plano o la red se trabo. Sin esto los motores se quedan encendidos
+  // hasta reiniciar el juego, porque el ultimo estado recibido vale para
+  // siempre (§4.3).
+  let heldSince = 0;
+  function tick(now) {
+    if (!heldSince) return;
+    if (now - heldSince > CFG.remoteTimeout * 1000) { clearRemote(); heldSince = 0; }
+  }
+
   function onData(m) {
     if (!m || !m.t) return;
     if (m.t === 'p') {                     // estado completo de los dedos
       clearRemote();
       for (const p of m.a) Input.pointers.set('r' + p[0], { x: p[1] * W, y: p[2] * H });
+      // mientras haya dedos, el celular late; el silencio es lo que se vigila
+      heldSince = m.a.length ? performance.now() : 0;
     } else if (m.t === 't') {              // tap: sirve para los menus
       Input.tapPos = { x: m.x * W, y: m.y * H };
       Input.lastTouch = performance.now();
@@ -1779,7 +2351,7 @@ const Link = (() => {
     const msg   = el('p', 'ctrl-msg', root);
     input.type = 'text'; input.inputMode = 'numeric'; input.maxLength = 6;
     input.placeholder = '000000'; input.autocomplete = 'off';
-    msg.textContent = 'both devices on the same wi-fi';
+    msg.textContent = 'wi-fi, ethernet or mobile data';
 
     if (!window.Peer) { msg.textContent = 'no internet — cannot pair'; input.disabled = true; return; }
 
@@ -1829,55 +2401,92 @@ const Link = (() => {
       sendPts();
     }, { passive: false });
     const up = e => { if (pts.delete(e.pointerId)) sendPts(); };
-    rect.addEventListener('pointerup', up);
-    rect.addEventListener('pointercancel', up);
-    window.addEventListener('blur', () => { pts.clear(); sendPts(); });
+    for (const t of ['pointerup', 'pointercancel']) {
+      rect.addEventListener(t, up);
+      window.addEventListener(t, up);        // por si el up cae fuera del pad
+    }
+    rect.addEventListener('lostpointercapture', up);
+    window.addEventListener('touchend', e => { if (e.touches && !e.touches.length && pts.size) { pts.clear(); sendPts(); } }, { passive: true });
+
+    // Soltar todo y avisarle a la TV. Bloquear la pantalla o cambiar de app
+    // dispara visibilitychange y muchas veces no dispara blur: sin esto, el
+    // celular deja el dedo apretado del otro lado y la TV nunca se entera.
+    const releasePad = () => { if (pts.size) { pts.clear(); sendPts(); } };
+    window.addEventListener('blur', releasePad);
+    window.addEventListener('pagehide', releasePad);
+    document.addEventListener('visibilitychange', () => { if (document.hidden) releasePad(); });
+
+    // Latido: mientras haya un dedo apoyado se reenvia el estado. Si el celular
+    // se duerme o la red se traba, el silencio es lo que le permite a la TV
+    // darse cuenta y soltar los motores sola.
+    setInterval(() => { if (pts.size) sendPts(); }, CFG.remoteBeat * 1000);
+
+    let lastCode = '', retry = 0, wait = 3000;
 
     function connect(code) {
+      lastCode = code;
+      clearTimeout(retry);
       msg.textContent = 'connecting…';
       input.disabled = true;
-      peer = new Peer();
+      peer = new Peer({ config: ICE });
       peer.on('open', () => {
         conn = peer.connect(PREFIX + code, { reliable: true });
         conn.on('open', () => {
           try { localStorage.setItem(LS_KEY, code); } catch (e) {}
           root.hidden = true; pad.hidden = false;
+          wait = 3000;
           layoutPad();
           navigator.wakeLock && navigator.wakeLock.request('screen').catch(() => {});
         });
         conn.on('data', m => { if (m && m.t === 'ar') { aspect = m.ar; layoutPad(); } });
-        conn.on('close', () => reset('disconnected'));
-        conn.on('error', () => reset('connection failed'));
+        conn.on('close', () => reset('disconnected', true));
+        conn.on('error', () => reset('connection failed', true));
       });
       peer.on('error', err => {
-        reset(err.type === 'peer-unavailable' ? 'no tv with that code' : 'error — ' + err.type);
+        const gone = err.type === 'peer-unavailable';
+        reset(gone ? 'no tv with that code' : 'error — ' + err.type, gone);
       });
     }
 
-    function reset(why) {
+    // El codigo de la tele ya no cambia al recargarla, asi que cuando se cae
+    // el enlace el celular vuelve solo: reintenta el mismo codigo hasta que
+    // la pantalla este de nuevo arriba. Si el jugador toca el campo, manda el.
+    function reset(why, again) {
       try { peer && peer.destroy(); } catch (e) {}
       peer = null; conn = null; pts.clear();
       root.hidden = false; pad.hidden = true;
-      input.disabled = false; input.value = '';
+      input.disabled = false;
       msg.textContent = why;
+      clearTimeout(retry);
+      if (again && lastCode) {
+        input.value = lastCode;
+        retry = setTimeout(() => connect(lastCode), wait);
+        wait = Math.min(Math.round(wait * 1.6), 15000);   // la tele puede tardar en volver
+      } else {
+        input.value = '';
+      }
     }
 
+    input.addEventListener('focus', () => { clearTimeout(retry); lastCode = ''; });
     input.addEventListener('input', () => {
+      clearTimeout(retry);
       input.value = input.value.replace(/\D/g, '').slice(0, 6);
       if (input.value.length === 6) { input.blur(); connect(input.value); }   // conecta solo
     });
 
     let saved = '';
     try { saved = localStorage.getItem(LS_KEY) || ''; } catch (e) {}
-    if (saved.length === 6) { input.value = saved; connect(saved); }
+    if (/^\d{6}$/.test(saved)) { input.value = saved; connect(saved); }
     else setTimeout(() => input.focus(), 300);
   }
 
   return {
     isController: IS_CTRL,
     start() { IS_CTRL ? controllerMode() : screenMode(); },
+    code: deviceCode,          // el top 10 cuelga de este codigo (§12.7)
     url: ctrlUrl,
-    status() { return state; }
+    status() { return state; },
+    tick
   };
 })();
 
@@ -1886,9 +2495,14 @@ resize();
 if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
   navigator.serviceWorker.register('sw.js').catch(() => {});   // offline; se ignora si no existe
 }
+Store.bind(Link.code());                 // la tabla es la de este codigo (§12.7)
 Store.load().then(l => { hs.list = l; });
 Prefs.loadMuted().then(m => { if (m) Sfx.setMuted(true); });
-document.addEventListener('visibilitychange', () => { if (document.hidden) Sfx.engine(false); last = performance.now(); });
+Prefs.loadTint().then(n => { if (n) Tint.set(n); });      // el vidrio de la ultima vez
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) { Sfx.engine(false); releaseAll(); }
+  last = performance.now();
+});
 window.addEventListener('load', () => Link.start());
 if (!Link.isController) requestAnimationFrame(frame);   // el celular-control no renderiza el juego
 </script>
