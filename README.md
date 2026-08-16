@@ -42,6 +42,24 @@ fuente: el juego es estático y la clave viaja en `index.html`, así que un
 top 10 realmente a prueba de trampas necesitaría un servidor que valide las
 partidas.
 
+## Tinte de la pantalla
+
+Escondido en el menú: cuatro toques seguidos sobre el título "MY SPACE DRIFT"
+cambian el tinte del vidrio y el nombre del elegido aparece un segundo bajo la
+raya. En escritorio hace lo mismo la tecla `T`. Los toques sueltos no suenan ni
+hacen nada, y si tardan más de dos segundos entre uno y otro la cuenta vuelve a
+cero, así que no se destapa sin querer.
+
+El ciclo pasa por MONO (el blanco y negro de siempre), GREEN, AMBER, RED,
+MAGENTA, VIOLET, BLUE y CYAN. No son paletas distintas: la escena se cuantiza
+a los mismos cuatro tonos y el color se multiplica al final, en el shader, que
+es lo que hacía el vidrio de la consola. En pantalla sigue habiendo cuatro
+tonos exactos, teñidos.
+
+El elegido se guarda junto con el silencio, así que el vidrio sigue puesto al
+volver a abrir el juego. La lista y la fuerza del filtro salen de `CFG.tints` y
+`CFG.tintSat`; agregar un hue es agregar una línea.
+
 ## Instalar
 
 Abrir el enlace en el móvil y usar "Añadir a pantalla de inicio". Tras la

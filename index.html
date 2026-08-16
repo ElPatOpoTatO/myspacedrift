@@ -84,6 +84,25 @@ const CFG = {
   inkCrush:      0.28,           // por debajo de esto el pixel es fondo: mata el halo del antialias
                                  // (queda justo por debajo del gris oscuro, 0.33, para no comerselo)
 
+  // --- tinte del vidrio (easter egg, §21.1) ---
+  // No es una paleta alternativa: son los mismos cuatro tonos con un filtro de
+  // color encima, que es lo que hacia el vidrio de la consola. MONO es el
+  // cristal sin tenir, o sea el blanco y negro de siempre.
+  tints: [
+    { name: 'MONO',    hue: -1 },
+    { name: 'GREEN',   hue: 88 },
+    { name: 'AMBER',   hue: 38 },
+    { name: 'RED',     hue: 4 },
+    { name: 'MAGENTA', hue: 316 },
+    { name: 'VIOLET',  hue: 268 },
+    { name: 'BLUE',    hue: 212 },
+    { name: 'CYAN',    hue: 176 },
+  ],
+  tintSat:       0.62,           // 0 = filtro incoloro, 1 = hue puro (los oscuros se irian a negro de color)
+  tintTaps:      4,              // toques seguidos en el titulo para destapar el easter egg
+  tintTapWindow: 2.0,            // s entre toque y toque: mas lento y la cuenta vuelve a cero
+  tintOsdTime:   1.4,            // s que el nombre del tinte queda en el menu
+
   // --- nave (§3) ---
   shipLen:       27,             // largo total (proporcion 3:4 con el ancho)
   shipWid:       20.25,
@@ -242,24 +261,33 @@ const Store = (() => {
 })();
 
 // Igual que los records: si el jugador silencia, tiene que seguir silenciado
-// la proxima vez que abra el juego.
+// la proxima vez que abra el juego. Lo mismo vale para el tinte de la pantalla:
+// el vidrio elegido es del aparato, no de la partida.
 const Prefs = (() => {
-  const KEY = 'vectordrift:muted';
+  const KEY_MUTE = 'vectordrift:muted';
+  const KEY_TINT = 'vectordrift:tint';
   const hasWin = typeof window !== 'undefined' && window.storage && typeof window.storage.get === 'function';
+
+  const read = async k => {
+    try {
+      if (hasWin) { const r = await window.storage.get(k, false); return (r && r.value) || ''; }
+      return localStorage.getItem(k) || '';
+    } catch (e) { return ''; }
+  };
+  const write = (k, v) => {
+    try {
+      if (hasWin) window.storage.set(k, v, false);
+      else localStorage.setItem(k, v);
+    } catch (e) { /* queda en la sesion */ }
+  };
+
   return {
-    async loadMuted() {
-      try {
-        if (hasWin) { const r = await window.storage.get(KEY, false); return !!r && r.value === '1'; }
-        return localStorage.getItem(KEY) === '1';
-      } catch (e) { return false; }
-    },
-    saveMuted(m) {
-      const raw = m ? '1' : '0';
-      try {
-        if (hasWin) window.storage.set(KEY, raw, false);
-        else localStorage.setItem(KEY, raw);
-      } catch (e) { /* queda en la sesion */ }
-    }
+    async loadMuted() { return (await read(KEY_MUTE)) === '1'; },
+    saveMuted(m) { write(KEY_MUTE, m ? '1' : '0'); },
+    // El nombre y no el indice: reordenar CFG.tints no le cambia el vidrio a
+    // nadie, y un nombre que ya no existe cae solo en el primero de la lista.
+    async loadTint() { return await read(KEY_TINT); },
+    saveTint(name) { write(KEY_TINT, String(name || '')); }
   };
 })();
 
@@ -504,6 +532,7 @@ const LCD = (() => {
     uniform sampler2D src;
     uniform vec2  lcd;            // celdas del LCD (ancho, alto)
     uniform vec3  pal[4];         // paleta, de oscuro a claro
+    uniform vec3  tint;           // filtro del vidrio; (1,1,1) = sin tenir
     uniform float gridK, gap, ditherK, gain, crush;
 
     float bayer2(vec2 a) { a = floor(a); return fract(a.x * 0.5 + a.y * a.y * 0.75); }
@@ -527,7 +556,10 @@ const LCD = (() => {
       vec2 e = min(f, 1.0 - f);
       if (gridK > 0.5 && min(e.x, e.y) < gap) q = max(q - 1.0, 0.0);
 
-      gl_FragColor = vec4(q < 0.5 ? pal[0] : (q < 1.5 ? pal[1] : (q < 2.5 ? pal[2] : pal[3])), 1.0);
+      // el tinte va al final, sobre el tono ya cuantizado: filtra el vidrio,
+      // no la escena, asi que en pantalla siguen habiendo cuatro tonos exactos
+      vec3 col = q < 0.5 ? pal[0] : (q < 1.5 ? pal[1] : (q < 2.5 ? pal[2] : pal[3]));
+      gl_FragColor = vec4(col * tint, 1.0);
     }`;
 
   let gl = null, prog = null, tex = null, fb = null, U = {};
@@ -562,8 +594,9 @@ const LCD = (() => {
     for (const p of [gl.TEXTURE_MIN_FILTER, gl.TEXTURE_MAG_FILTER]) gl.texParameteri(gl.TEXTURE_2D, p, gl.NEAREST);
     for (const p of [gl.TEXTURE_WRAP_S, gl.TEXTURE_WRAP_T]) gl.texParameteri(gl.TEXTURE_2D, p, gl.CLAMP_TO_EDGE);
 
-    for (const n of ['src', 'lcd', 'gridK', 'gap', 'ditherK', 'gain', 'crush']) U[n] = gl.getUniformLocation(prog, n);
+    for (const n of ['src', 'lcd', 'gridK', 'gap', 'ditherK', 'gain', 'crush', 'tint']) U[n] = gl.getUniformLocation(prog, n);
     gl.uniform1i(U.src, 0);
+    gl.uniform3f(U.tint, 1, 1, 1);       // arranca sin tenir; Tint lo pisa al cargar la preferencia
     gl.uniform1f(U.gridK, CFG.lcdGrid);
     gl.uniform1f(U.ditherK, CFG.dither);
     gl.uniform1f(U.gain, CFG.lcdGain);
@@ -581,8 +614,18 @@ const LCD = (() => {
   // Se pierde la paleta, no el pixelado ni el juego.
   if (!gl) fb = cv.getContext('2d');
 
+  // Filtro del vidrio: multiplica el color ya cuantizado. Se guarda en CSS
+  // ademas de en el uniform porque el camino sin WebGL lo pinta a mano.
+  let tintCss = '';
+
   return {
     get ok() { return !!gl; },
+    setTint(rgb) {
+      const [r, g, b] = rgb;
+      tintCss = (r > 0.999 && g > 0.999 && b > 0.999)
+        ? '' : 'rgb(' + [r, g, b].map(c => Math.round(c * 255)).join(',') + ')';
+      if (gl) { gl.useProgram(prog); gl.uniform3f(U.tint, r, g, b); }
+    },
     resize() {
       if (gl) gl.viewport(0, 0, cv.width, cv.height);
       else if (fb) fb.imageSmoothingEnabled = false;
@@ -593,6 +636,12 @@ const LCD = (() => {
         fb.imageSmoothingEnabled = false;
         fb.clearRect(0, 0, cv.width, cv.height);
         fb.drawImage(scene, 0, 0, cv.width, cv.height);
+        if (tintCss) {                       // sin shader el tinte se multiplica encima
+          fb.globalCompositeOperation = 'multiply';
+          fb.fillStyle = tintCss;
+          fb.fillRect(0, 0, cv.width, cv.height);
+          fb.globalCompositeOperation = 'source-over';
+        }
         return;
       }
       gl.bindTexture(gl.TEXTURE_2D, tex);
@@ -603,6 +652,65 @@ const LCD = (() => {
       gl.uniform1f(U.gap, clamp(0.5 / cellPx, 0.04, 0.12));
       gl.drawArrays(gl.TRIANGLES, 0, 3);
     }
+  };
+})();
+
+/* ==================== tinte de la pantalla (§21.1) ====================
+   Easter egg. La consola nunca cambiaba de paleta: cambiaba el vidrio, y por
+   eso esto no toca ni los cuatro tonos ni el juego. El shader cuantiza igual
+   que siempre y el color se multiplica al final, asi que en pantalla siguen
+   habiendo cuatro tonos exactos, solo que tenidos.
+   Se destapa tocando el titulo del menu CFG.tintTaps veces seguidas (o con la
+   tecla T en escritorio) y cada vez pasa al siguiente hue de la lista. El
+   elegido se guarda, asi que el vidrio sigue puesto al reabrir el juego.
+   ==================================================================== */
+const Tint = (() => {
+  const list = CFG.tints;
+  let idx = 0, osd = 0, taps = 0, lastTap = 0;
+
+  // hue -> color puro (HSV con s=v=1) aclarado hacia el blanco segun
+  // CFG.tintSat: el filtro tine, no repinta. Con el blanco puro no hay filtro.
+  function rgb() {
+    const h = list[idx].hue;
+    if (!(h >= 0)) return [1, 1, 1];
+    const f = n => {
+      const k = (n + h / 60) % 6;
+      return 1 - Math.max(0, Math.min(k, 4 - k, 1));
+    };
+    const s = CFG.tintSat;
+    return [f(5), f(3), f(1)].map(c => 1 - s + s * c);
+  }
+  function apply() { LCD.setTint(rgb()); }
+
+  function set(name) {
+    const i = list.findIndex(t => t.name === name);
+    idx = i < 0 ? 0 : i;                       // nombre viejo o vacio: vidrio limpio
+    apply();
+  }
+  function cycle() {
+    idx = (idx + 1) % list.length;
+    apply();
+    Prefs.saveTint(list[idx].name);
+    osd = CFG.tintOsdTime;
+    return list[idx].name;
+  }
+  // Los toques sueltos no hacen nada y no suenan: solo el ultimo de la
+  // secuencia cambia el vidrio, o dejaria de ser un secreto.
+  function tap() {
+    const now = performance.now();
+    taps = (now - lastTap > CFG.tintTapWindow * 1000) ? 1 : taps + 1;
+    lastTap = now;
+    if (taps < CFG.tintTaps) return false;
+    taps = 0;
+    cycle();
+    return true;
+  }
+
+  return {
+    set, cycle, tap,
+    get name() { return list[idx].name; },
+    get osd()  { return osd; },
+    tick(dt) { if (osd > 0) osd = Math.max(0, osd - dt); }
   };
 })();
 
@@ -676,6 +784,7 @@ window.addEventListener('keydown', e => {
   if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') Key.left = true;
   if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') Key.right = true;
   if (e.key === ' ') { Key.left = true; Key.right = true; }
+  if (e.key === 't' || e.key === 'T') Tint.cycle();   // el mismo easter egg, sin tocar el titulo
   Input.lastTouch = performance.now();
   Sfx.init(); Sfx.resume();
 });
@@ -1666,11 +1775,23 @@ function drawLinkCode(x, y, s, align) {
 }
 
 /* ------------------------------- pantallas ------------------------------ */
+// El titulo es el boton escondido del tinte (§21.1): no se dibuja distinto ni
+// responde al toque suelto, solo cuenta. El area se corta antes del boton de
+// sonido, que en pantallas angostas le queda encima.
+function tintBox() {
+  const w = Font.width('MY SPACE DRIFT', 2);
+  const x = Math.round(LW / 2 - w / 2);
+  const right = Math.min(x + w, muteIcon().x - 6);   // el boton de sonido manda, se mueva donde se mueva
+  return cssBox(x, 0, Math.max(8, right - x), 3 * T, 'TINT');
+}
+
 function drawMenu() {
   const cx = LW / 2;
   text('MY SPACE DRIFT', cx, T, 2, 'center', 3);
+  G.buttons.push(tintBox());
   ctx.fillStyle = TONE[2];
   ctx.fillRect(Math.round(cx - 56), 3 * T + 2, 112, 1);
+  if (Tint.osd > 0) text('TINT ' + Tint.name, cx, 3 * T + 6, 1, 'center', 2);
   menuBox(['PLAY', 'HIGH SCORES'], cx, 5 * T, 112);
   if (G.attract) text('DEMO', T / 2, T / 2, 1, 'left', 2);
   else drawLinkCode(cx, 11 * T, 2, 'center');   // el codigo se lee desde el sillon
@@ -1759,6 +1880,11 @@ function handleHudTap(t) {
 function handleMenuTap(t) {
   for (const b of G.buttons) {
     if (!hit(b, t)) continue;
+    // el titulo se come el toque en silencio hasta completar la secuencia
+    if (b.label === 'TINT') {
+      if (Tint.tap()) { Sfx.init(); Sfx.resume(); Sfx.level(); buzz(20); }
+      return true;
+    }
     Sfx.init(); Sfx.resume(); Sfx.ui();
     if (b.label === 'MUTE') { Sfx.toggleMute(); return true; }
     if (b.label === 'PLAY') { G.attract = false; startGame(false); return true; }
@@ -1801,6 +1927,7 @@ function frame(now) {
   dt = clamp(dt, 0, 0.05);              // sin pausa: si la app pierde foco, se reanuda seco (§14)
 
   Input.update();
+  Tint.tick(dt);
   const tap = Input.consumeTap();
   G.buttons = [];
 
@@ -2141,6 +2268,7 @@ if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
 Store.bind(Link.code());                 // la tabla es la de este codigo (§12.7)
 Store.load().then(l => { hs.list = l; });
 Prefs.loadMuted().then(m => { if (m) Sfx.setMuted(true); });
+Prefs.loadTint().then(n => { if (n) Tint.set(n); });      // el vidrio de la ultima vez
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) { Sfx.engine(false); releaseAll(); }
   last = performance.now();
