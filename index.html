@@ -2,21 +2,31 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <meta name="theme-color" content="#000000">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<!-- black-translucent + viewport-fit=cover: en iOS la pagina ocupa tambien la franja de
+     la barra de estado, en vez de quedar empujada hacia abajo dejando un marco arriba.
+     Lo que queda debajo del notch se descuenta luego con SAFE (ver resize). -->
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="My Space Drift">
 <link rel="apple-touch-icon" href="icon-180.png">
 <link rel="manifest" href="manifest.webmanifest">
 <title>MY SPACE DRIFT</title>
 <style>
   *{margin:0;padding:0;box-sizing:border-box}
-  html,body{width:100%;height:100%;overflow:hidden;background:#000;
+  /* dvh = alto visible de verdad. Con 100% o 100vh el movil reserva sitio para barras
+     que en pantalla completa no existen, y lo de abajo quedaba cortado. */
+  html,body{width:100%;height:100vh;height:100dvh;overflow:hidden;background:#000;
     -webkit-user-select:none;user-select:none;-webkit-touch-callout:none;
     -webkit-tap-highlight-color:transparent;touch-action:none;overscroll-behavior:none}
   canvas{display:block;width:100%;height:100%;touch-action:none;image-rendering:pixelated}
+
+  /* Sonda para leer los margenes seguros (notch, isla, barra de gestos) desde JS. */
+  #safe{position:fixed;top:0;left:0;width:0;height:0;pointer-events:none;visibility:hidden;
+    padding:env(safe-area-inset-top) env(safe-area-inset-right)
+            env(safe-area-inset-bottom) env(safe-area-inset-left)}
 
   /* ---- control (celular): DOM puro, no pasa por el shader, se pinta a mano
          con los mismos cuatro tonos de la paleta ---- */
@@ -42,6 +52,7 @@
 </head>
 <body>
 <canvas id="screen"></canvas>
+<div id="safe"></div>
 <script>
 "use strict";
 
@@ -135,6 +146,15 @@ const CFG = {
   levelBase:     700,
   levelStep:     600,
   refillTime:    3.2,            // s en volver a la densidad tras subir de nivel
+
+  // --- audio (§13) ---
+  volMaster:     0.50,
+  volFloorHz:    380,            // Hz — piso duro: ni el piezo LCD ni un altavoz de movil bajan de aqui
+  attack:        0.0015,         // s — casi instantaneo, solo lo justo para no chasquear
+  release:       0.004,          // s — el piezo se apaga, no se desvanece
+  engineHz:      440,            // portadora del motor
+  enginePulseHz: 18,             // el "putt-putt": la portadora se abre y cierra a esta tasa
+  engineVol:     0.05,
 
   // --- otros ---
   attractDelay:  6.0,            // s de inactividad en el menu antes del modo demo
@@ -272,56 +292,110 @@ const Prefs = (() => {
 })();
 
 /* ============================ audio (§13) ============================ */
-// Chiptune crudo con osciladores. Nada grabado. El audio nunca es informacion
-// necesaria: todo lo que suena tambien esta en pantalla.
-const Sfx = (() => {
-  let ac = null, master = null, engineOsc = null, engineGain = null;
-  let muted = false, ready = false;
+// Suena a maquinita LCD: un zumbador piezoelectrico movido por ondas cuadradas, como
+// una Game & Watch. De ese hardware salen todas las reglas de este modulo:
+//   - solo 'square': el piezo no reproduce otra cosa
+//   - nada por debajo de CFG.volFloorHz: el piezo no tiene graves, y el altavoz de un
+//     movil tampoco, asi que la fidelidad historica y la reproduccion real coinciden
+//   - envolventes rectangulares: el piezo esta encendido o apagado, no se desvanece
+//   - sin ruido blanco: la Game & Watch no tenia generador de ruido. Sus explosiones
+//     eran saltos rapidos de tono, que es lo que hace scramble()
+//   - la dinamica va por duracion, no por volumen: el piezo no controla amplitud
+// Nada grabado, ni un solo archivo. El audio nunca es informacion necesaria: todo lo
+// que suena tambien esta en pantalla.
 
-  function init() {
-    if (ready) return;
+// La menor pentatonica, de 440 Hz a 2637. Toda frecuencia del juego sale de esta tabla:
+// cualquier par de notas de aqui suena intencional en vez de aleatorio.
+const TONES = [440, 523, 587, 659, 784, 880, 1047, 1175, 1319, 1568, 1760, 2093, 2349, 2637];
+
+const Sfx = (() => {
+  let ac = null, master = null;
+  let engOsc = null, engLfo = null, engGain = null;
+  let muted = false, ready = false, quiet = false;
+  const last = {};                  // ultimo disparo de cada sonido, para el limitador
+
+  // Sin argumentos es idempotente (asi la llaman los gestos del usuario). Pasarle un
+  // contexto rehace el modulo sobre el: es lo que usa el banco offline para renderizar
+  // los sonidos a PCM y comprobarlos sin que nadie escuche.
+  function init(ctx) {
+    if (ready && !ctx) return;
     const AC = window.AudioContext || window.webkitAudioContext;
-    if (!AC) return;
-    try { ac = new AC(); } catch (e) { return; }
+    if (!ctx && !AC) return;
+    try { ac = ctx || new AC(); } catch (e) { return; }
+    engOsc = engLfo = engGain = null;
+    for (const k in last) delete last[k];
     master = ac.createGain();
-    master.gain.value = muted ? 0 : 0.5;
+    master.gain.value = muted ? 0 : CFG.volMaster;
     master.connect(ac.destination);
     ready = true;
   }
   function resume() { if (ac && ac.state === 'suspended') ac.resume(); }
+  // quiet calla la simulacion, no la interfaz: un toque en un boton durante la demo
+  // sigue haciendo clic, porque ese sonido lo provoca el usuario y no el bot.
+  function audible() { return ready && !muted && !quiet; }
 
-  function blip(type, f0, f1, dur, vol, curve) {
-    if (!ready || muted) return;
+  // Una nota cuadrada agendada en tiempo absoluto del AudioContext.
+  function tone(freq, at, dur, vol) {
+    if (!ready) return;
     const o = ac.createOscillator(), g = ac.createGain();
-    o.type = type;
-    const t = ac.currentTime;
-    o.frequency.setValueAtTime(f0, t);
-    if (curve === 'exp') o.frequency.exponentialRampToValueAtTime(Math.max(20, f1), t + dur);
-    else o.frequency.linearRampToValueAtTime(Math.max(20, f1), t + dur);
-    g.gain.setValueAtTime(vol, t);
-    g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    o.type = 'square';
+    o.frequency.setValueAtTime(Math.max(CFG.volFloorHz, freq), at);
+    g.gain.setValueAtTime(0, at);
+    g.gain.linearRampToValueAtTime(vol, at + CFG.attack);
+    g.gain.setValueAtTime(vol, at + Math.max(CFG.attack, dur - CFG.release));
+    g.gain.linearRampToValueAtTime(0, at + dur);
     o.connect(g); g.connect(master);
-    o.start(t); o.stop(t + dur + 0.02);
+    o.start(at); o.stop(at + dur + 0.005);
   }
-  function noise(dur, vol, filtF) {
-    if (!ready || muted) return;
-    const n = Math.floor(ac.sampleRate * dur);
-    const buf = ac.createBuffer(1, n, ac.sampleRate);
-    const d = buf.getChannelData(0);
-    for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / n);
-    const src = ac.createBufferSource(); src.buffer = buf;
-    const f = ac.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = filtF;
-    const g = ac.createGain(); g.gain.value = vol;
-    src.connect(f); f.connect(g); g.connect(master);
-    src.start();
+
+  // notes = [[Hz, ms], ...] encadenadas desde ahora mismo. Aqui no hay setTimeout a
+  // proposito: un temporizador deriva bajo carga, no se cancela al mutear y no comparte
+  // reloj con el audio. Todo se agenda de golpe sobre ac.currentTime.
+  function seq(notes, vol) {
+    if (!audible()) return;
+    let at = ac.currentTime;
+    for (let i = 0; i < notes.length; i++) {
+      const d = notes[i][1] / 1000;
+      tone(notes[i][0], at, d, vol);
+      at += d;
+    }
+  }
+
+  // La explosion Game & Watch: un tono que se despeña a saltos por la escala. hi y lo
+  // son indices dentro de TONES; el centro baja con el tiempo y se le añade temblor.
+  function scramble(steps, hi, lo, stepMs, vol) {
+    if (!audible()) return;
+    let at = ac.currentTime;
+    const d = stepMs / 1000, top = TONES.length - 1;
+    for (let i = 0; i < steps; i++) {
+      const t = steps > 1 ? i / (steps - 1) : 0;
+      const j = Math.round(hi + (lo - hi) * t + (Math.random() * 2 - 1) * 1.5);
+      tone(TONES[Math.min(top, Math.max(0, j))], at, d, vol * (1 - t * 0.35));
+      at += d;
+    }
+  }
+
+  // Limitador por sonido. shoot() sale de un bucle de autofuego y destroy() puede
+  // dispararse varias veces en el mismo frame; sin esto el resultado es barro. Solo
+  // calla audio repetido: las balas, las rocas y el puntaje no se enteran.
+  function fresh(key, ms) {
+    if (!ready) return false;
+    const t = ac.currentTime;
+    if (last[key] !== undefined && t - last[key] < ms / 1000) return false;
+    last[key] = t;
+    return true;
   }
 
   return {
     init, resume,
+    get tones() { return TONES; },
     get muted() { return muted; },
+    // Callar sin mutear: el modo demo del menu se ve, pero no se oye.
+    get quiet() { return quiet; },
+    set quiet(v) { quiet = !!v; if (quiet) Sfx.engine(false); },
     setMuted(m) {                        // aplica sin guardar: lo usa la carga inicial
       muted = !!m;
-      if (master) master.gain.value = muted ? 0 : 0.5;
+      if (master) master.gain.value = muted ? 0 : CFG.volMaster;
       if (muted) Sfx.engine(false);
       return muted;
     },
@@ -330,37 +404,57 @@ const Sfx = (() => {
       Prefs.saveMuted(muted);
       return muted;
     },
+    // El motor no es un zumbido grave (a 62 Hz un movil no daba nada): es un tableteo.
+    // Una portadora cuadrada que un LFO cuadrado abre y cierra. Dos osciladores y cero
+    // temporizadores; la señal del LFO se suma al valor intrinseco de la ganancia.
     engine(on) {
       if (!ready) return;
-      if (on && !engineOsc && !muted) {
-        engineOsc = ac.createOscillator(); engineGain = ac.createGain();
-        engineOsc.type = 'square'; engineOsc.frequency.value = 62;
-        engineGain.gain.value = 0.0;
-        engineGain.gain.linearRampToValueAtTime(0.06, ac.currentTime + 0.05);
-        engineOsc.connect(engineGain); engineGain.connect(master);
-        engineOsc.start();
-      } else if (!on && engineOsc) {
-        const o = engineOsc, g = engineGain;
-        g.gain.linearRampToValueAtTime(0.0001, ac.currentTime + 0.06);
-        o.stop(ac.currentTime + 0.1);
-        engineOsc = null; engineGain = null;
+      const want = on && !muted && !quiet;
+      if (want && !engOsc) {
+        const t = ac.currentTime, half = CFG.engineVol / 2;
+        engOsc = ac.createOscillator(); engOsc.type = 'square';
+        engOsc.frequency.value = CFG.engineHz;
+        engLfo = ac.createOscillator(); engLfo.type = 'square';
+        engLfo.frequency.value = CFG.enginePulseHz;
+        const depth = ac.createGain(); depth.gain.value = half;
+        engGain = ac.createGain();
+        engGain.gain.setValueAtTime(0, t);
+        engGain.gain.linearRampToValueAtTime(half, t + 0.04);
+        engLfo.connect(depth); depth.connect(engGain.gain);
+        engOsc.connect(engGain); engGain.connect(master);
+        engOsc.start(t); engLfo.start(t);
+      } else if (!want && engOsc) {
+        const t = ac.currentTime, o = engOsc, l = engLfo, g = engGain;
+        g.gain.cancelScheduledValues(t);
+        g.gain.setValueAtTime(g.gain.value, t);
+        g.gain.linearRampToValueAtTime(0, t + 0.05);
+        o.stop(t + 0.07); l.stop(t + 0.07);
+        engOsc = engLfo = engGain = null;
       }
     },
-    shoot()   { blip('square', 900, 340, 0.07, 0.10, 'exp'); },
-    split()   { noise(0.16, 0.28, 1400); },
-    destroy() { noise(0.3, 0.35, 700); blip('triangle', 260, 60, 0.25, 0.14, 'exp'); },
-    pickup()  { blip('square', 520, 1180, 0.14, 0.14, 'exp'); },
-    repair()  { blip('triangle', 440, 660, 0.09, 0.15, 'lin');
-                setTimeout(() => blip('triangle', 660, 880, 0.09, 0.15, 'lin'), 85);
-                setTimeout(() => blip('triangle', 880, 1320, 0.16, 0.15, 'lin'), 170); },
-    damage()  { blip('sawtooth', 240, 70, 0.3, 0.2, 'exp'); noise(0.2, 0.2, 500); },
-    death()   { blip('sawtooth', 420, 40, 0.9, 0.25, 'exp'); noise(0.7, 0.3, 900); },
-    level()   { blip('square', 440, 880, 0.1, 0.13, 'lin'); setTimeout(()=>blip('square',880,1320,0.12,0.13,'lin'),110); },
-    ui()      { blip('square', 660, 660, 0.05, 0.09, 'lin'); },
+
+    // Los ocho efectos. El rango de ganancia es estrecho a proposito (0.07-0.14): lo que
+    // separa un sonido chico de uno grande es cuanto dura, no cuanto suena.
+    ui()      { if (ready && !muted) tone(1760, ac.currentTime, 0.018, 0.07); },
+    shoot()   { if (fresh('shoot', 60)) seq([[2637, 8], [2093, 8], [1568, 8]], 0.08); },
+    destroy() { if (fresh('destroy', 45)) scramble(12, 11, 2, 15, 0.13); },
+    pickup()  { seq([[1047, 40], [1319, 40], [1568, 40]], 0.10); },
+    repair()  { seq([[880, 55], [1047, 55], [1319, 55], [1760, 90]], 0.10); },
+    damage()  { seq([[784, 45], [587, 45], [440, 110]], 0.14); },
+    death()   { seq([[1568, 90], [1319, 90], [1175, 90], [880, 90],
+                     [784, 90], [659, 90], [523, 90], [440, 320]], 0.14); },
+    level()   { seq([[1047, 70], [1319, 70], [1568, 70], [2093, 140]], 0.12); },
   };
 })();
 
-function buzz(ms) { if (navigator.vibrate) { try { navigator.vibrate(ms); } catch (e) {} } }
+// Alcanzable desde fuera: sin esto ni el banco de pruebas ni el test offline pueden
+// tocar el modulo, porque Sfx es un const de ambito de script.
+window.Sfx = Sfx;
+// El modo demo tampoco vibra: hacer temblar el movil en el menu es peor que sonar.
+function buzz(ms) {
+  if (Sfx.quiet) return;
+  if (navigator.vibrate) { try { navigator.vibrate(ms); } catch (e) {} }
+}
 
 /* ============================ canvas ============================ */
 // El juego se dibuja en 'scene', un canvas 2D fuera del DOM y de resolucion
@@ -375,10 +469,25 @@ let trail = document.createElement('canvas');
 let tctx = trail.getContext('2d');
 let W = 0, H = 0, DPR = 1, PIX = 1;
 
+// Margenes seguros del aparato (notch, isla dinamica, barra de gestos). El lienzo llega
+// hasta el borde fisico; solo el HUD se aparta, para no escribir debajo del recorte.
+const SAFE = { t: 0, r: 0, b: 0, l: 0 };
+const safeEl = document.getElementById('safe');
+
 function resize() {
   DPR = Math.min(window.devicePixelRatio || 1, 2);
-  W = Math.max(1, Math.floor(window.innerWidth));
-  H = Math.max(1, Math.floor(window.innerHeight));
+  // visualViewport es lo que se ve de verdad; innerWidth/innerHeight incluyen franjas
+  // que en pantalla completa no estan, y por eso se cortaba la parte de abajo.
+  const vv = window.visualViewport;
+  W = Math.max(1, Math.floor(vv ? vv.width : window.innerWidth));
+  H = Math.max(1, Math.floor(vv ? vv.height : window.innerHeight));
+  if (safeEl) {
+    const s = getComputedStyle(safeEl);
+    SAFE.t = parseFloat(s.paddingTop) || 0;
+    SAFE.r = parseFloat(s.paddingRight) || 0;
+    SAFE.b = parseFloat(s.paddingBottom) || 0;
+    SAFE.l = parseFloat(s.paddingLeft) || 0;
+  }
   PIX = clamp(CFG.lcdRows / H, 0.2, 1);            // 1 = pantalla mas chica que el buffer LCD
   const bw = Math.max(1, Math.round(W * PIX)), bh = Math.max(1, Math.round(H * PIX));
   for (const c of [scene, trail]) { c.width = bw; c.height = bh; }
@@ -394,6 +503,10 @@ function resize() {
 }
 window.addEventListener('resize', resize);
 window.addEventListener('orientationchange', () => setTimeout(resize, 120));
+if (window.visualViewport) {
+  window.visualViewport.addEventListener('resize', resize);
+  window.visualViewport.addEventListener('scroll', resize);
+}
 
 /* ======================= shader LCD Game Boy (§21) =======================
    Un solo paso de post-proceso sobre la escena:
@@ -632,12 +745,12 @@ function pos(e) {
   return { x: e.clientX - r.left, y: e.clientY - r.top };
 }
 cv.addEventListener('pointerdown', e => {
-  cv.setPointerCapture && cv.setPointerCapture(e.pointerId);
   const p = pos(e);
+  try { cv.setPointerCapture(e.pointerId); } catch (err) {}
   // se decide aca, no en el frame: el dedo queda marcado mientras siga apoyado
   if (muteActive() && hit(muteBox(), p)) p.ui = true;
   Input.pointers.set(e.pointerId, p);
-  Input.tapPos = p;
+  Input.tapPos = { x: p.x, y: p.y };
   Input.lastTouch = performance.now();
   Sfx.init(); Sfx.resume();
   e.preventDefault();
@@ -653,7 +766,17 @@ function drop(e) { Input.pointers.delete(e.pointerId); }
 cv.addEventListener('pointerup', drop);
 cv.addEventListener('pointercancel', drop);
 cv.addEventListener('pointerleave', drop);
-window.addEventListener('blur', () => Input.pointers.clear());
+cv.addEventListener('lostpointercapture', drop);
+
+// Soltarlo todo cuando la partida deja de estar delante. Antes blur limpiaba los dedos
+// pero no las teclas, y nada limpiaba nada al cambiar de app: se volvia con un control
+// pegado y la unica salida era cerrar la pestaña.
+function releaseAll() {
+  Input.pointers.clear();
+  Key.left = false; Key.right = false;
+}
+window.addEventListener('blur', releaseAll);
+window.addEventListener('pagehide', releaseAll);
 
 // Teclado, util para probar en escritorio
 window.addEventListener('keydown', e => {
@@ -878,6 +1001,7 @@ function startGame(attract) {
   G.time = 0; G.spawnTimer = 0; G.refill = 1.6;
   G.flash = 0; G.levelBanner = 0; G.timeScale = 1; G.deathTimer = 0;
   G.attract = !!attract;
+  Sfx.quiet = G.attract;            // la demo del menu se ve, pero no se oye ni vibra
   G.ship = newShip(W / 2, H / 2);
   G.ship.vx = Math.cos(G.ship.a) * CFG.shipMaxSpeed * 0.7;
   G.ship.vy = Math.sin(G.ship.a) * CFG.shipMaxSpeed * 0.7;
@@ -1402,6 +1526,12 @@ function uiEnd()   { ctx.setTransform(PIX, 0, 0, PIX, 0, 0); }
 function cssBox(x, y, w, h, label) {
   return { x: x / PIX, y: y / PIX, w: w / PIX, h: h / PIX, label };
 }
+// Margenes seguros del aparato, pasados a pixeles de LCD: SAFE viene en px CSS y la UI
+// se dibuja en el buffer. El juego llega al borde fisico; solo el HUD se aparta, para
+// que el marcador y el boton de sonido no queden debajo del notch o de la isla.
+function safeX() { return Math.round(SAFE.l * PIX); }
+function safeY() { return Math.round(SAFE.t * PIX); }
+function safeW() { return Math.round(SAFE.r * PIX); }
 function pushBtn(label, x, y, w, h) { G.buttons.push(cssBox(x, y, w, h, label)); }
 function hit(b, t) { return t && t.x >= b.x && t.x <= b.x + b.w && t.y >= b.y && t.y <= b.y + b.h; }
 // Un boton esta "apretado" mientras haya un dedo encima: es el estado
@@ -1605,7 +1735,7 @@ function icon(bits, x, y, s, tone) {
    el icono y se calcula en un solo lugar.
    -------------------------------------------------------------------- */
 const MUTE_SCALE = 2;
-const muteIcon = () => ({ x: LW - 2 * T - 4, y: 4, s: MUTE_SCALE });
+const muteIcon = () => ({ x: LW - safeW() - 2 * T - 4, y: safeY() + 4, s: MUTE_SCALE });
 function muteBox() {
   const m = muteIcon(), pad = 5;
   return cssBox(m.x - pad, m.y - pad, 8 * m.s + 2 * pad, 8 * m.s + 2 * pad, 'MUTE');
@@ -1671,8 +1801,8 @@ function drawMenu() {
 
 function drawHud() {
   // franja de estado: es la window layer de la Game Boy, arriba y fija
-  text('SCORE ' + String(Math.floor(G.score)).padStart(6, '0'), T / 2, T / 2, 1, 'left', 3);
-  text('LV ' + G.level, LW - 3 * T - 2, T / 2, 1, 'right', 3);
+  text('SCORE ' + String(Math.floor(G.score)).padStart(6, '0'), safeX() + T / 2, safeY() + T / 2, 1, 'left', 3);
+  text('LV ' + G.level, LW - safeW() - 3 * T - 2, safeY() + T / 2, 1, 'right', 3);
   drawMuteButton();
   if (G.levelBanner > 0 && blink(140)) {
     text('LEVEL ' + G.level, LW / 2, LH() / 2 - 7, 2, 'center', 3);
@@ -1859,7 +1989,7 @@ function frame(now) {
       Input.lastTouch = now;
       // el boton de sonido gana al toque que corta la demo
       if (G.attract) {
-        if (!handleHudTap(tap)) { G.attract = false; G.ship = null; G.meteors.length = 0; G.bullets.length = 0; G.pickups.length = 0; G.shards.length = 0; G.rings.length = 0; Sfx.engine(false); }
+        if (!handleHudTap(tap)) { G.attract = false; Sfx.quiet = false; G.ship = null; G.meteors.length = 0; G.bullets.length = 0; G.pickups.length = 0; G.shards.length = 0; G.rings.length = 0; Sfx.engine(false); }
       } else handleMenuTap(tap);
     } else if (screen === SCREEN.SCORES || screen === SCREEN.DEAD) {
       handleMenuTap(tap);
@@ -2139,7 +2269,10 @@ Store.bind(Link.code());                 // la tabla es la de este codigo (§12.
 Store.load().then(l => { hs.list = l; });
 Prefs.loadMuted().then(m => { if (m) Sfx.setMuted(true); });
 Prefs.loadTint().then(n => { if (n) Tint.set(n); });      // el vidrio de la ultima vez
-document.addEventListener('visibilitychange', () => { if (document.hidden) Sfx.engine(false); last = performance.now(); });
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) { Sfx.engine(false); releaseAll(); }
+  last = performance.now();
+});
 window.addEventListener('load', () => Link.start());
 if (!Link.isController) requestAnimationFrame(frame);   // el celular-control no renderiza el juego
 </script>
