@@ -1,0 +1,1462 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta name="theme-color" content="#050d06">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="My Space Drift">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="manifest" href="manifest.webmanifest">
+<title>MY SPACE DRIFT</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{width:100%;height:100%;overflow:hidden;background:#050d06;
+    -webkit-user-select:none;user-select:none;-webkit-touch-callout:none;
+    -webkit-tap-highlight-color:transparent;touch-action:none;overscroll-behavior:none}
+  canvas{display:block;width:100%;height:100%;touch-action:none}
+
+  /* ---- enlace TV <-> celular ---- */
+  #link-code{position:fixed;left:0;right:0;bottom:16px;z-index:5;text-align:center;
+    color:#7dff9b;font:13px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    letter-spacing:1px;opacity:.8;line-height:1.9;text-transform:uppercase}
+  #link-code b{display:block;font-size:34px;letter-spacing:10px;margin-top:2px;font-weight:400}
+
+  #ctrl{position:fixed;inset:0;z-index:10;background:#050d06;color:#7dff9b;
+    font:15px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;letter-spacing:1px;
+    display:flex;align-items:center;justify-content:center;flex-direction:column;gap:18px}
+  #ctrl h1{font-size:19px;font-weight:400;letter-spacing:5px;opacity:.9}
+  #ctrl p{font-size:12px;opacity:.5;text-align:center;padding:0 24px;line-height:1.8}
+  #ctrl input{width:230px;padding:12px;background:transparent;border:1.6px solid #7dff9b;
+    color:#7dff9b;font:32px ui-monospace,Menlo,Consolas,monospace;letter-spacing:10px;
+    text-align:center;outline:none;border-radius:0}
+  #ctrl input::placeholder{opacity:.25}
+  #ctrl-pad{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:#050d06}
+  #ctrl-pad .pad{width:100%;max-width:100%;max-height:100%;display:flex;
+    border:1.6px solid rgba(125,255,155,.5)}
+  #ctrl-pad .half{flex:1;display:flex;align-items:center;justify-content:center;
+    font:20px ui-monospace,Menlo,Consolas,monospace;color:rgba(125,255,155,.3);
+    transition:background .05s linear}
+  #ctrl-pad .half:first-child{border-right:1px solid rgba(125,255,155,.25)}
+  #ctrl-pad .half.on{background:rgba(125,255,155,.16);color:#7dff9b}
+  #ctrl[hidden],#ctrl-pad[hidden]{display:none}   /* hidden pierde contra display:flex */
+</style>
+<script src="https://unpkg.com/peerjs@1.5.5/dist/peerjs.min.js" defer></script>
+</head>
+<body>
+<canvas id="screen"></canvas>
+<script>
+"use strict";
+
+/* ============================================================
+   MY SPACE DRIFT — single-file build
+   Design doc: plan-juego-vectorial.md (secciones 1-19)
+   Todo lo tecnico de esta build vive en CFG.
+   ============================================================ */
+
+const CFG = {
+  // --- pantalla / estetica ---
+  bg:            '#050d06',
+  ink:           '#7dff9b',      // verde LCD unico
+  gridSize:      34,             // px de la cuadricula fija
+  gridAlpha:     0.085,
+  trailFade:     0.42,           // 0..1 por frame. Mas alto = estela mas corta (§2)
+  scanlineAlpha: 0.05,
+
+  // --- nave (§3) ---
+  shipLen:       27,             // largo total (proporcion 3:4 con el ancho)
+  shipWid:       20.25,
+  shipRot:       3.5,            // rad/s de giro sostenido (tope)
+  rotInertia:    0.10,           // la inercia del giro es el 10% de la inercia lineal (velocidad angular de crucero)
+  rotInertia:    0.10,           // inercia del giro = 10% de la inercia de traslacion
+  cruiseThrust:  210,            // px/s^2 — empuje constante hacia adelante, siempre encendido
+  brakeDecel:    150,            // px/s^2 de freno con ambos motores
+  brakeFloor:    0.5,            // piso duro: frenando nunca baja de esta fraccion de la maxima
+  shipFriction:  0.35,           // fraccion de velocidad perdida por segundo (deriva lateral)
+  shipMaxSpeed:  212,            // -10%
+  shipRadius:    11,             // radio de colision
+
+  // --- disparo (§7) ---
+  maxBullets:    4,
+  fireInterval:  0.17,           // s — cadencia fija: picotear no dispara mas
+  bulletSpeed:   430,
+  bulletLife:    0.55,
+
+  // --- meteoros (§6) ---
+  meteorSpeedMin: 55,
+  meteorSpeedMax: 135,
+  meteorRotMax:   0.9,
+  objectScale:    0.6,           // -40% al tamano de las rocas
+  fairnessTime:   0.5,           // s — guarda de justicia
+
+  // --- pickup (§8) ---
+  dropChance:    0.11,
+  pickupScale:   0.6,            // -40% tambien al pickup; perilla aparte por legibilidad
+  dropSizeBias:  0.5,            // la roca mas chica del nivel suelta +50%, la mas grande -50%
+  repairChance:  0.20,           // de cada 10 pickups, 2 son de reparacion
+  invulnTime:    6.0,
+  invulnBlink:   2.0,
+
+  // --- vidas (§9) ---
+  lives:         2,
+  hitGrace:      1.5,            // s de gracia tras recibir dano (evita doble muerte instantanea)
+
+  // --- puntaje (§10) ---
+  timeDrip:      6,              // pts/s base
+  levelBase:     700,
+  levelStep:     600,
+  refillTime:    3.2,            // s en volver a la densidad tras subir de nivel
+
+  // --- otros ---
+  attractDelay:  6.0,            // s de inactividad en el menu antes del modo demo
+  maxScores:     10,
+};
+
+/* ============================ storage ============================ */
+// Top 10 debe sobrevivir a cerrar la app (§12.6).
+// window.storage (entorno de artifacts) -> localStorage -> memoria.
+const Store = (() => {
+  // Nombre historico: se mantiene tras renombrar el juego para no perder los records ya guardados.
+  const KEY = 'vectordrift:scores';
+  let mem = null;
+  const hasWin = typeof window !== 'undefined' && window.storage && typeof window.storage.get === 'function';
+  return {
+    async load() {
+      if (mem) return mem;
+      try {
+        if (hasWin) {
+          const r = await window.storage.get(KEY, false);
+          mem = r && r.value ? JSON.parse(r.value) : [];
+        } else {
+          mem = JSON.parse(localStorage.getItem(KEY) || '[]');
+        }
+      } catch (e) { mem = []; }
+      if (!Array.isArray(mem)) mem = [];
+      return mem;
+    },
+    async save(list) {
+      mem = list;
+      const raw = JSON.stringify(list);
+      try {
+        if (hasWin) await window.storage.set(KEY, raw, false);
+        else localStorage.setItem(KEY, raw);
+      } catch (e) { /* queda en memoria de la sesion */ }
+    },
+    cached() { return mem || []; }
+  };
+})();
+
+/* ============================ audio (§13) ============================ */
+// Chiptune crudo con osciladores. Nada grabado. El audio nunca es informacion
+// necesaria: todo lo que suena tambien esta en pantalla.
+const Sfx = (() => {
+  let ac = null, master = null, engineOsc = null, engineGain = null;
+  let muted = false, ready = false;
+
+  function init() {
+    if (ready) return;
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    try { ac = new AC(); } catch (e) { return; }
+    master = ac.createGain();
+    master.gain.value = muted ? 0 : 0.5;
+    master.connect(ac.destination);
+    ready = true;
+  }
+  function resume() { if (ac && ac.state === 'suspended') ac.resume(); }
+
+  function blip(type, f0, f1, dur, vol, curve) {
+    if (!ready || muted) return;
+    const o = ac.createOscillator(), g = ac.createGain();
+    o.type = type;
+    const t = ac.currentTime;
+    o.frequency.setValueAtTime(f0, t);
+    if (curve === 'exp') o.frequency.exponentialRampToValueAtTime(Math.max(20, f1), t + dur);
+    else o.frequency.linearRampToValueAtTime(Math.max(20, f1), t + dur);
+    g.gain.setValueAtTime(vol, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    o.connect(g); g.connect(master);
+    o.start(t); o.stop(t + dur + 0.02);
+  }
+  function noise(dur, vol, filtF) {
+    if (!ready || muted) return;
+    const n = Math.floor(ac.sampleRate * dur);
+    const buf = ac.createBuffer(1, n, ac.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / n);
+    const src = ac.createBufferSource(); src.buffer = buf;
+    const f = ac.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = filtF;
+    const g = ac.createGain(); g.gain.value = vol;
+    src.connect(f); f.connect(g); g.connect(master);
+    src.start();
+  }
+
+  return {
+    init, resume,
+    get muted() { return muted; },
+    toggleMute() {
+      muted = !muted;
+      if (master) master.gain.value = muted ? 0 : 0.5;
+      if (muted) Sfx.engine(false);
+      return muted;
+    },
+    engine(on) {
+      if (!ready) return;
+      if (on && !engineOsc && !muted) {
+        engineOsc = ac.createOscillator(); engineGain = ac.createGain();
+        engineOsc.type = 'square'; engineOsc.frequency.value = 62;
+        engineGain.gain.value = 0.0;
+        engineGain.gain.linearRampToValueAtTime(0.06, ac.currentTime + 0.05);
+        engineOsc.connect(engineGain); engineGain.connect(master);
+        engineOsc.start();
+      } else if (!on && engineOsc) {
+        const o = engineOsc, g = engineGain;
+        g.gain.linearRampToValueAtTime(0.0001, ac.currentTime + 0.06);
+        o.stop(ac.currentTime + 0.1);
+        engineOsc = null; engineGain = null;
+      }
+    },
+    shoot()   { blip('square', 900, 340, 0.07, 0.10, 'exp'); },
+    split()   { noise(0.16, 0.28, 1400); },
+    destroy() { noise(0.3, 0.35, 700); blip('triangle', 260, 60, 0.25, 0.14, 'exp'); },
+    pickup()  { blip('square', 520, 1180, 0.14, 0.14, 'exp'); },
+    repair()  { blip('triangle', 440, 660, 0.09, 0.15, 'lin');
+                setTimeout(() => blip('triangle', 660, 880, 0.09, 0.15, 'lin'), 85);
+                setTimeout(() => blip('triangle', 880, 1320, 0.16, 0.15, 'lin'), 170); },
+    damage()  { blip('sawtooth', 240, 70, 0.3, 0.2, 'exp'); noise(0.2, 0.2, 500); },
+    death()   { blip('sawtooth', 420, 40, 0.9, 0.25, 'exp'); noise(0.7, 0.3, 900); },
+    level()   { blip('square', 440, 880, 0.1, 0.13, 'lin'); setTimeout(()=>blip('square',880,1320,0.12,0.13,'lin'),110); },
+    ui()      { blip('square', 660, 660, 0.05, 0.09, 'lin'); },
+  };
+})();
+
+function buzz(ms) { if (navigator.vibrate) { try { navigator.vibrate(ms); } catch (e) {} } }
+
+/* ============================ canvas ============================ */
+const cv = document.getElementById('screen');
+const ctx = cv.getContext('2d');
+let trail = document.createElement('canvas');
+let tctx = trail.getContext('2d');
+let gridCv = document.createElement('canvas');
+let gctx = gridCv.getContext('2d');
+let W = 0, H = 0, DPR = 1;
+
+function resize() {
+  DPR = Math.min(window.devicePixelRatio || 1, 2);
+  W = Math.max(1, Math.floor(window.innerWidth));
+  H = Math.max(1, Math.floor(window.innerHeight));
+  for (const c of [cv, trail, gridCv]) { c.width = Math.floor(W * DPR); c.height = Math.floor(H * DPR); }
+  cv.style.width = W + 'px'; cv.style.height = H + 'px';
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  tctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  gctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  paintGrid();
+  tctx.clearRect(0, 0, W, H);
+}
+function paintGrid() {
+  // Cuadricula fija a la pantalla: es el vidrio del aparato, no el suelo (§2)
+  gctx.clearRect(0, 0, W, H);
+  gctx.strokeStyle = CFG.ink;
+  gctx.globalAlpha = CFG.gridAlpha;
+  gctx.lineWidth = 1;
+  gctx.beginPath();
+  for (let x = 0; x <= W; x += CFG.gridSize) { gctx.moveTo(Math.floor(x) + .5, 0); gctx.lineTo(Math.floor(x) + .5, H); }
+  for (let y = 0; y <= H; y += CFG.gridSize) { gctx.moveTo(0, Math.floor(y) + .5); gctx.lineTo(W, Math.floor(y) + .5); }
+  gctx.stroke();
+  gctx.globalAlpha = 1;
+}
+window.addEventListener('resize', resize);
+window.addEventListener('orientationchange', () => setTimeout(resize, 120));
+
+/* ============================ input (§4) ============================ */
+const Input = {
+  left: false, right: false,
+  pointers: new Map(),
+  lastTouch: 0,
+  tapPos: null,        // consumido por las pantallas de menu
+  edgeLeft: false, edgeRight: false, edgeBoth: false,
+  _pl: false, _pr: false, _pb: false,
+
+  update() {
+    let l = false, r = false;
+    for (const p of this.pointers.values()) { if (p.x < W / 2) l = true; else r = true; }
+    if (Key.left) l = true;
+    if (Key.right) r = true;
+    this.left = l; this.right = r;
+    const both = l && r;
+    this.edgeLeft  = l && !this._pl;
+    this.edgeRight = r && !this._pr;
+    this.edgeBoth  = both && !this._pb;
+    this._pl = l; this._pr = r; this._pb = both;
+  },
+  consumeTap() { const t = this.tapPos; this.tapPos = null; return t; }
+};
+const Key = { left: false, right: false };
+
+function pos(e) {
+  const r = cv.getBoundingClientRect();
+  return { x: e.clientX - r.left, y: e.clientY - r.top };
+}
+cv.addEventListener('pointerdown', e => {
+  cv.setPointerCapture && cv.setPointerCapture(e.pointerId);
+  const p = pos(e);
+  Input.pointers.set(e.pointerId, p);
+  Input.tapPos = p;
+  Input.lastTouch = performance.now();
+  Sfx.init(); Sfx.resume();
+  e.preventDefault();
+}, { passive: false });
+cv.addEventListener('pointermove', e => {
+  if (Input.pointers.has(e.pointerId)) Input.pointers.set(e.pointerId, pos(e));
+}, { passive: false });
+function drop(e) { Input.pointers.delete(e.pointerId); }
+cv.addEventListener('pointerup', drop);
+cv.addEventListener('pointercancel', drop);
+cv.addEventListener('pointerleave', drop);
+window.addEventListener('blur', () => Input.pointers.clear());
+
+// Teclado, util para probar en escritorio
+window.addEventListener('keydown', e => {
+  if (e.repeat) return;
+  if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') Key.left = true;
+  if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') Key.right = true;
+  if (e.key === ' ') { Key.left = true; Key.right = true; }
+  Input.lastTouch = performance.now();
+  Sfx.init(); Sfx.resume();
+});
+window.addEventListener('keyup', e => {
+  if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') Key.left = false;
+  if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') Key.right = false;
+  if (e.key === ' ') { Key.left = false; Key.right = false; }
+});
+
+/* ============================ geometria ============================ */
+const TAU = Math.PI * 2;
+const rnd = (a, b) => a + Math.random() * (b - a);
+const rndInt = (a, b) => Math.floor(rnd(a, b + 1));
+const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
+
+// Roca irregular y asimetrica de contorno (§6)
+function makeRock(radius) {
+  const n = rndInt(8, 12);
+  const pts = [];
+  let ang = 0;
+  for (let i = 0; i < n; i++) {
+    ang += TAU / n * rnd(0.65, 1.35);
+    const r = radius * rnd(0.62, 1.0);
+    pts.push({ x: Math.cos(ang) * r, y: Math.sin(ang) * r });
+  }
+  return pts;
+}
+
+// Contorno de la nave: triangulo alargado con la parte trasera curvada hacia
+// adentro (§3). Se guarda como lista de puntos -> los segmentos son lo que se
+// pierde al danarse y lo que sale despedido al morir.
+function makeShipOutline() {
+  const L = CFG.shipLen / 2, Wd = CFG.shipWid / 2;
+  const nose = { x: L, y: 0 }, rc = { x: -L, y: Wd }, lc = { x: -L, y: -Wd };
+  const lerp = (a, b, t) => ({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
+  const pts = [nose];
+  pts.push(lerp(nose, rc, 1 / 3), lerp(nose, rc, 2 / 3), rc);   // borde derecho en 3 tramos
+  const cx = -L * 0.28, cy = 0;                                  // control de la curva concava
+  for (let i = 1; i <= 6; i++) {                                 // popa curvada hacia adentro
+    const t = i / 6, u = 1 - t;
+    pts.push({ x: u * u * rc.x + 2 * u * t * cx + t * t * lc.x,
+               y: u * u * rc.y + 2 * u * t * cy + t * t * lc.y });
+  }
+  pts.push(lerp(lc, nose, 1 / 3), lerp(lc, nose, 2 / 3));        // borde izquierdo en 3 tramos
+  return pts;
+}
+const SHIP_PTS = makeShipOutline();
+const SHIP_SEGS = (() => {
+  const s = [];
+  for (let i = 0; i < SHIP_PTS.length; i++) s.push([SHIP_PTS[i], SHIP_PTS[(i + 1) % SHIP_PTS.length]]);
+  return s;
+})();
+const DAMAGED_HIDE = [1, 6]; // segmentos que faltan tras perder la primera vida
+
+/* ============================ estado ============================ */
+const SCREEN = { MENU: 'MENU', PLAY: 'PLAY', DEAD: 'DEAD', INITIALS: 'INITIALS', SCORES: 'SCORES', ROTATE: 'ROTATE' };
+let screen = SCREEN.MENU;
+let prevScreen = SCREEN.MENU;
+
+const G = {
+  ship: null,
+  meteors: [], bullets: [], pickups: [], shards: [], rings: [],
+  score: 0, level: 1, nextLevelAt: CFG.levelBase,
+  time: 0, spawnTimer: 0, refill: 0,
+  flash: 0, levelBanner: 0, timeScale: 1,
+  deathTimer: 0, attract: false,
+  buttons: [],
+};
+
+// La inercia lineal decae con constante de tiempo tau = -1/ln(1-shipFriction).
+// El giro usa una fraccion de esa misma constante, asi que si mueves la friccion
+// de la nave, el giro la sigue solo.
+function rotTau() {
+  return CFG.rotInertia * (-1 / Math.log(1 - CFG.shipFriction));
+}
+
+function newShip(x, y) {
+  return {
+    x, y, vx: 0, vy: 0, a: -Math.PI / 2, av: 0, av: 0,
+    lives: CFG.lives, damaged: false,
+    invuln: 0, grace: 0, cd: 0, alive: true,
+    left: false, right: false
+  };
+}
+
+// Curva de dificultad continua: la maneja el puntaje, el nivel solo la anuncia (§10)
+function curve() {
+  const s = G.score;
+  const t = clamp(s / 26000, 0, 1);           // progreso 0..1
+  return {
+    count:   Math.round(6 + t * 24),          // densidad objetivo
+    sizeMin: (15 - t * 8) * CFG.objectScale,  // el nivel alto es un campo de rocas chicas
+    sizeMax: (48 - t * 30) * CFG.objectScale,
+    speed:   1 + t * 0.55,
+    aimed:   0.10 + t * 0.35,                 // proporcion de meteoros directos
+    predict: 0.03 + t * 0.20,                 // proporcion de predictivos
+  };
+}
+
+function levelUp() {
+  G.level++;
+  G.nextLevelAt += CFG.levelBase + CFG.levelStep * (G.level - 1);
+  G.flash = 1;
+  G.levelBanner = 1.1;
+  G.refill = CFG.refillTime;
+  // Los meteoros restantes se disuelven SIN dar puntos (§11)
+  for (const m of G.meteors) disintegrate(m, false);
+  G.meteors.length = 0;
+  Sfx.level();
+}
+
+function addScore(n) {
+  G.score += n;
+  while (G.score >= G.nextLevelAt) levelUp();
+}
+
+/* ============================ meteoros ============================ */
+function spawnMeteor() {
+  const c = curve();
+  const s = G.ship;
+  for (let attempt = 0; attempt < 12; attempt++) {
+    const radius = rnd(c.sizeMin, Math.max(c.sizeMin + 4, c.sizeMax));
+    // nacen FUERA de pantalla, pegados a un borde (§6)
+    const edge = rndInt(0, 3);
+    let x, y;
+    const pad = radius + 12;
+    if (edge === 0) { x = rnd(0, W); y = -pad; }
+    else if (edge === 1) { x = W + pad; y = rnd(0, H); }
+    else if (edge === 2) { x = rnd(0, W); y = H + pad; }
+    else { x = -pad; y = rnd(0, H); }
+
+    const speed = rnd(CFG.meteorSpeedMin, CFG.meteorSpeedMax) * c.speed;
+    let dir;
+    const roll = Math.random();
+    if (s && roll < c.aimed) {                       // DIRECTO
+      dir = Math.atan2(s.y - y, s.x - x) + rnd(-0.05, 0.05);
+    } else if (s && roll < c.aimed + c.predict) {    // PREDICTIVO
+      const d = Math.hypot(s.x - x, s.y - y);
+      const t = d / speed;
+      dir = Math.atan2(s.y + s.vy * t - y, s.x + s.vx * t - x) + rnd(-0.04, 0.04);
+    } else {                                         // ALEATORIO
+      // hacia adentro del campo, con desviacion
+      dir = Math.atan2(H / 2 - y, W / 2 - x) + rnd(-1.0, 1.0);
+    }
+    const vx = Math.cos(dir) * speed, vy = Math.sin(dir) * speed;
+
+    // Guarda de justicia: nada puede alcanzar a la nave en menos de medio segundo (§6)
+    if (s && s.alive && !fair(x, y, vx, vy, radius, s)) continue;
+
+    G.meteors.push({
+      x, y, vx, vy, a: rnd(0, TAU), va: rnd(-CFG.meteorRotMax, CFG.meteorRotMax),
+      pts: makeRock(radius), r: radius
+    });
+    return;
+  }
+}
+function fair(x, y, vx, vy, r, s) {
+  const dx = x - s.x, dy = y - s.y;
+  const rvx = vx - s.vx, rvy = vy - s.vy;
+  const vv = rvx * rvx + rvy * rvy;
+  if (vv < 1e-4) return true;
+  let t = -(dx * rvx + dy * rvy) / vv;
+  if (t < 0) return true;
+  if (t > CFG.fairnessTime) return true;
+  const cx = dx + rvx * t, cy = dy + rvy * t;
+  return Math.hypot(cx, cy) > r + CFG.shipRadius + 6;
+}
+
+function disintegrate(m, giveDrop) {
+  const ca = Math.cos(m.a), sa = Math.sin(m.a);
+  for (let i = 0; i < m.pts.length; i++) {
+    const p = m.pts[i], q = m.pts[(i + 1) % m.pts.length];
+    const mid = { x: (p.x + q.x) / 2, y: (p.y + q.y) / 2 };
+    G.shards.push({
+      x: m.x + mid.x * ca - mid.y * sa,
+      y: m.y + mid.x * sa + mid.y * ca,
+      ax: (p.x - mid.x), ay: (p.y - mid.y),
+      bx: (q.x - mid.x), by: (q.y - mid.y),
+      a: m.a, va: rnd(-3, 3),
+      vx: m.vx + rnd(-70, 70), vy: m.vy + rnd(-70, 70),
+      life: rnd(0.4, 0.8), max: 0.8
+    });
+  }
+  if (giveDrop && Math.random() < dropOdds(m.r)) spawnPickup(m);
+}
+
+// Probabilidad de soltar pickup segun el tamano, relativa al rango del nivel
+// actual: la roca mas chica paga +50%, la mas grande -50%. El promedio no cambia,
+// solo se reparte: tirarle a la grava rinde mas que tirarle a los bloques.
+function dropOdds(r) {
+  const c = curve();
+  const lo = c.sizeMin, hi = Math.max(c.sizeMin + 4, c.sizeMax);
+  const t = clamp((r - lo) / Math.max(1, hi - lo), 0, 1);   // 0 = la mas chica, 1 = la mas grande
+  return CFG.dropChance * (1 + CFG.dropSizeBias - t * 2 * CFG.dropSizeBias);
+}
+
+function spawnPickup(m) {
+  // Dos recolectables. El de reparacion solo cae si hay algo que reparar:
+  // un pickup inutil seria una recompensa vacia por un tiro bien puesto.
+  const canRepair = G.ship && G.ship.damaged && G.ship.lives < CFG.lives;
+  const kind = (canRepair && Math.random() < CFG.repairChance) ? 'repair' : 'shield';
+  G.pickups.push({
+    x: m.x, y: m.y,
+    vx: m.vx * 0.45 + rnd(-15, 15), vy: m.vy * 0.45 + rnd(-15, 15),
+    t: 0, r: 13 * CFG.pickupScale, kind
+  });
+}
+
+/* ============================ update de partida ============================ */
+function startGame(attract) {
+  G.meteors.length = 0; G.bullets.length = 0; G.pickups.length = 0;
+  G.shards.length = 0; G.rings.length = 0;
+  G.score = 0; G.level = 1; G.nextLevelAt = CFG.levelBase;
+  G.time = 0; G.spawnTimer = 0; G.refill = 1.6;
+  G.flash = 0; G.levelBanner = 0; G.timeScale = 1; G.deathTimer = 0;
+  G.attract = !!attract;
+  G.ship = newShip(W / 2, H / 2);
+  G.ship.vx = Math.cos(G.ship.a) * CFG.shipMaxSpeed * 0.7;
+  G.ship.vy = Math.sin(G.ship.a) * CFG.shipMaxSpeed * 0.7;
+  G.ship.grace = 1.2;
+  if (!attract) screen = SCREEN.PLAY;
+}
+
+function shipCopies(s) {
+  // Solo la nave se envuelve. Mientras cruza se dibuja partida en ambos bordes,
+  // y en las cuatro esquinas si toca dos (§5).
+  const out = [{ x: s.x, y: s.y }];
+  const m = CFG.shipLen;
+  const dxs = s.x < m ? [W] : s.x > W - m ? [-W] : [];
+  const dys = s.y < m ? [H] : s.y > H - m ? [-H] : [];
+  for (const dx of dxs) out.push({ x: s.x + dx, y: s.y });
+  for (const dy of dys) out.push({ x: s.x, y: s.y + dy });
+  for (const dx of dxs) for (const dy of dys) out.push({ x: s.x + dx, y: s.y + dy });
+  return out;
+}
+
+function updatePlay(dt) {
+  const s = G.ship;
+  G.time += dt;
+
+  // ---- control ----
+  let L, R;
+  if (G.attract) { const b = botControl(s); L = b.left; R = b.right; }
+  else { L = Input.left; R = Input.right; }
+  if (!s.alive) { L = false; R = false; }
+  s.left = L; s.right = R;
+
+  const both = L && R;
+  // Rotacion pura: no desplaza (§4). Ahora con inercia: la velocidad angular
+  // persigue al objetivo, no salta. Soltar el motor deja el giro corriendo un poco.
+  const targetAv = both ? 0 : ((R ? CFG.shipRot : 0) - (L ? CFG.shipRot : 0));
+  s.av += (targetAv - s.av) * (1 - Math.exp(-dt / rotTau()));
+  s.a += s.av * dt;
+  Sfx.engine((L || R) && !G.attract && s.alive);
+
+  const maxSp = CFG.shipMaxSpeed * curve().speed;
+
+  // Avance constante: la nave nunca deja de ir hacia adelante.
+  // Ambos motores = retro, frena ligeramente (no puede detenerse).
+  if (!both) {
+    s.vx += Math.cos(s.a) * CFG.cruiseThrust * dt;
+    s.vy += Math.sin(s.a) * CFG.cruiseThrust * dt;
+  }
+
+  // friccion baja: al girar, la velocidad vieja sigue un rato -> deriva
+  const f = Math.pow(1 - CFG.shipFriction, dt);
+  s.vx *= f; s.vy *= f;
+
+  let sp = Math.hypot(s.vx, s.vy);
+  if (both && sp > 1) {
+    // piso duro: el freno recorta hasta brakeFloor y ahi se queda. Nunca detiene la nave.
+    const target = Math.max(CFG.brakeFloor * maxSp, sp - CFG.brakeDecel * dt);
+    s.vx = s.vx / sp * target; s.vy = s.vy / sp * target; sp = target;
+  }
+  if (sp > maxSp) { s.vx = s.vx / sp * maxSp; s.vy = s.vy / sp * maxSp; }
+  s.x += s.vx * dt; s.y += s.vy * dt;
+  s.x = (s.x % W + W) % W; s.y = (s.y % H + H) % H;
+
+  // ---- disparo: cualquier motor encendido dispara (§7) ----
+  s.cd -= dt;
+  if ((L || R) && s.alive && s.cd <= 0 && G.bullets.length < CFG.maxBullets) {
+    s.cd = CFG.fireInterval;
+    const nose = CFG.shipLen / 2;
+    G.bullets.push({
+      x: s.x + Math.cos(s.a) * nose, y: s.y + Math.sin(s.a) * nose,
+      vx: s.vx + Math.cos(s.a) * CFG.bulletSpeed,
+      vy: s.vy + Math.sin(s.a) * CFG.bulletSpeed,
+      life: CFG.bulletLife
+    });
+    Sfx.shoot();
+  }
+
+  if (s.invuln > 0) s.invuln -= dt;
+  if (s.grace > 0) s.grace -= dt;
+
+  // ---- goteo por tiempo (§10) ----
+  addScore(CFG.timeDrip * (1 + G.level * 0.14) * dt);
+
+  // ---- spawn ----
+  const c = curve();
+  const target = G.refill > 0
+    ? Math.round(c.count * (1 - G.refill / CFG.refillTime))
+    : c.count;
+  if (G.refill > 0) G.refill -= dt;
+  G.spawnTimer -= dt;
+  const live = G.meteors.length;
+  if (G.spawnTimer <= 0 && G.meteors.length < target + 8 && live < target) {
+    // el relleno tras subir de nivel debe tardar segundos, no medio minuto (§11):
+    // el ritmo real lo marca la rampa de 'target', el spawner solo la sigue
+    const deficit = target - live;
+    G.spawnTimer = clamp(0.4 / Math.max(1, deficit), 0.04, 0.4);
+    spawnMeteor();
+  }
+
+  // ---- meteoros: linea recta para siempre, sin envolverse (§5,§6) ----
+  for (let i = G.meteors.length - 1; i >= 0; i--) {
+    const m = G.meteors[i];
+    m.x += m.vx * dt; m.y += m.vy * dt; m.a += m.va * dt;
+    const pad = m.r + 40;
+    if (m.x < -pad || m.x > W + pad || m.y < -pad || m.y > H + pad) G.meteors.splice(i, 1);
+  }
+
+  // ---- balas ----
+  for (let i = G.bullets.length - 1; i >= 0; i--) {
+    const b = G.bullets[i];
+    b.x += b.vx * dt; b.y += b.vy * dt; b.life -= dt;
+    if (b.life <= 0 || b.x < 0 || b.x > W || b.y < 0 || b.y > H) { G.bullets.splice(i, 1); continue; }
+    for (let j = G.meteors.length - 1; j >= 0; j--) {
+      const m = G.meteors[j];
+      if (Math.hypot(b.x - m.x, b.y - m.y) > m.r) continue;
+      if (!pointInRock(b.x, b.y, m)) continue;
+      G.bullets.splice(i, 1);
+      hitMeteor(j);
+      break;
+    }
+  }
+
+  // ---- pickups ----
+  for (let i = G.pickups.length - 1; i >= 0; i--) {
+    const p = G.pickups[i];
+    p.x += p.vx * dt; p.y += p.vy * dt; p.t += dt;
+    if (p.x < -40 || p.x > W + 40 || p.y < -40 || p.y > H + 40) { G.pickups.splice(i, 1); continue; }
+    if (s.alive) {
+      for (const cpy of shipCopies(s)) {
+        if (Math.hypot(p.x - cpy.x, p.y - cpy.y) < p.r + CFG.shipRadius) {
+          G.pickups.splice(i, 1);
+          if (p.kind === 'repair') {
+            s.lives = Math.min(CFG.lives, s.lives + 1);
+            s.damaged = false;         // la nave recupera su contorno completo
+            Sfx.repair(); buzz([20, 40, 20]);
+            G.rings.push({ x: p.x, y: p.y, r: 34, life: 0.5, max: 0.5, inward: true });
+          } else {
+            s.invuln = CFG.invulnTime;
+            Sfx.pickup(); buzz(20);
+            G.rings.push({ x: p.x, y: p.y, r: 8, life: 0.5, max: 0.5 });
+          }
+          break;
+        }
+      }
+    }
+  }
+
+  // ---- colision nave / meteoros ----
+  if (s.alive && s.invuln <= 0 && s.grace <= 0) {
+    outer:
+    for (const cpy of shipCopies(s)) {
+      for (let j = G.meteors.length - 1; j >= 0; j--) {
+        const m = G.meteors[j];
+        if (Math.hypot(cpy.x - m.x, cpy.y - m.y) > m.r + CFG.shipRadius) continue;
+        if (!circleHitsRock(cpy.x, cpy.y, CFG.shipRadius, m)) continue;
+        damageShip();
+        break outer;
+      }
+    }
+  }
+
+  // ---- shards / rings ----
+  for (let i = G.shards.length - 1; i >= 0; i--) {
+    const d = G.shards[i];
+    d.x += d.vx * dt; d.y += d.vy * dt; d.a += d.va * dt;
+    d.vx *= 0.99; d.vy *= 0.99; d.life -= dt;
+    if (d.life <= 0) G.shards.splice(i, 1);
+  }
+  for (let i = G.rings.length - 1; i >= 0; i--) {
+    const r = G.rings[i];
+    r.r += (r.inward ? -60 : 130) * dt; r.life -= dt;
+    if (r.r < 2) r.r = 2;
+    if (r.life <= 0) G.rings.splice(i, 1);
+  }
+
+  if (G.flash > 0) G.flash -= dt * 3.2;
+  if (G.levelBanner > 0) G.levelBanner -= dt;
+
+  // ---- muerte ----
+  if (!s.alive) {
+    G.deathTimer += dt;
+    G.timeScale = clamp(0.22 + G.deathTimer * 0.9, 0.22, 1);
+    if (G.deathTimer > 1.5) {
+      if (G.attract) startGame(true);
+      else endRun();
+    }
+  }
+}
+
+function hitMeteor(index) {
+  // Una bala, una roca: se rompe y desaparece. No hay mitades ni divisiones.
+  const m = G.meteors[index];
+  G.meteors.splice(index, 1);
+  addScore(Math.round(80 + 1600 / Math.max(4, m.r)));   // mas puntos entre mas chica
+  disintegrate(m, true);
+  Sfx.destroy(); buzz(18);
+}
+
+function damageShip() {
+  const s = G.ship;
+  s.lives--;
+  if (s.lives > 0) {
+    s.damaged = true;                 // unica indicacion de vidas que existe (§3)
+    s.grace = CFG.hitGrace;
+    Sfx.damage(); buzz([30, 40, 30]);
+    G.flash = 0.7;
+    G.rings.push({ x: s.x, y: s.y, r: 10, life: 0.4, max: 0.4 });
+  } else {
+    s.alive = false;
+    G.deathTimer = 0; G.timeScale = 0.22;
+    Sfx.engine(false); Sfx.death(); buzz([40, 60, 120]);
+    // la nave se descompone en los mismos segmentos con que esta dibujada (§9)
+    const ca = Math.cos(s.a), sa = Math.sin(s.a);
+    SHIP_SEGS.forEach((seg, i) => {
+      if (s.damaged && DAMAGED_HIDE.includes(i)) return;
+      const mid = { x: (seg[0].x + seg[1].x) / 2, y: (seg[0].y + seg[1].y) / 2 };
+      G.shards.push({
+        x: s.x + mid.x * ca - mid.y * sa,
+        y: s.y + mid.x * sa + mid.y * ca,
+        ax: seg[0].x - mid.x, ay: seg[0].y - mid.y,
+        bx: seg[1].x - mid.x, by: seg[1].y - mid.y,
+        a: s.a, va: rnd(-4, 4),
+        vx: s.vx + rnd(-90, 90), vy: s.vy + rnd(-90, 90),
+        life: 1.6, max: 1.6
+      });
+    });
+  }
+}
+
+function pointInRock(px, py, m) {
+  const dx = px - m.x, dy = py - m.y;
+  const ca = Math.cos(-m.a), sa = Math.sin(-m.a);
+  const lx = dx * ca - dy * sa, ly = dx * sa + dy * ca;
+  let inside = false;
+  const p = m.pts;
+  for (let i = 0, j = p.length - 1; i < p.length; j = i++) {
+    if ((p[i].y > ly) !== (p[j].y > ly) &&
+        lx < (p[j].x - p[i].x) * (ly - p[i].y) / (p[j].y - p[i].y) + p[i].x) inside = !inside;
+  }
+  return inside;
+}
+function circleHitsRock(px, py, r, m) {
+  if (pointInRock(px, py, m)) return true;
+  const dx = px - m.x, dy = py - m.y;
+  const ca = Math.cos(-m.a), sa = Math.sin(-m.a);
+  const lx = dx * ca - dy * sa, ly = dx * sa + dy * ca;
+  const p = m.pts;
+  for (let i = 0; i < p.length; i++) {
+    const a = p[i], b = p[(i + 1) % p.length];
+    const vx = b.x - a.x, vy = b.y - a.y;
+    const t = clamp(((lx - a.x) * vx + (ly - a.y) * vy) / (vx * vx + vy * vy || 1), 0, 1);
+    if (Math.hypot(lx - (a.x + vx * t), ly - (a.y + vy * t)) < r) return true;
+  }
+  return false;
+}
+
+/* ============================ modo demo (§12.2) ============================ */
+// Nave gobernada por la maquina: esquiva, dispara, parte rocas y muere.
+function botControl(s) {
+  if (!s.alive) return { left: false, right: false };
+  let threat = null, threatT = 99, target = null, targetD = 1e9;
+  for (const m of G.meteors) {
+    const dx = m.x - s.x, dy = m.y - s.y;
+    const d = Math.hypot(dx, dy);
+    const rvx = m.vx - s.vx, rvy = m.vy - s.vy;
+    const vv = rvx * rvx + rvy * rvy;
+    let t = vv > 1e-3 ? -(dx * rvx + dy * rvy) / vv : -1;
+    if (t > 0 && t < 2.2) {
+      const cd = Math.hypot(dx + rvx * t, dy + rvy * t);
+      if (cd < m.r + 46 && t < threatT) { threatT = t; threat = m; }
+    }
+    if (d < targetD) { targetD = d; target = m; }
+  }
+  // Con avance constante, "ambos" ya no acelera: frena. El bot lo usa solo para
+  // quedarse encarando una roca mientras dispara.
+  let want, hold = false;
+  if (threat && threatT < 1.3) {
+    want = Math.atan2(s.y - threat.y, s.x - threat.x);  // huir a toda velocidad
+    hold = false;
+  } else if (target && targetD < 320) {
+    want = Math.atan2(target.y - s.y, target.x - s.x);  // encarar y disparar
+    hold = targetD < 170;                                // frena si ya la tiene encima
+  } else {
+    want = Math.atan2(H / 2 - s.y, W / 2 - s.x);
+    hold = false;
+  }
+  // angulo al que va a quedar si suelta ahora: sin esto el bot oscila
+  const aEff = s.a + s.av * rotTau();
+  let d = ((want - aEff + Math.PI) % TAU + TAU) % TAU - Math.PI;
+  if (Math.abs(d) < 0.18) return { left: hold, right: hold };
+  return { left: d < 0, right: d > 0 };
+}
+
+/* ============================ high scores ============================ */
+let hs = { list: [], initials: [0, 0, 0], slot: 0, pending: null, holdT: 0, holdDir: 0, fromRun: false };
+const LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+
+function endRun() {
+  const list = Store.cached().slice();
+  const entry = { i: 'AAA', s: Math.floor(G.score), l: G.level, m: 1 };
+  const qualifies = list.length < CFG.maxScores || entry.s > list[list.length - 1].s;
+  hs.pending = qualifies ? entry : null;
+  screen = SCREEN.DEAD;
+}
+
+async function commitInitials() {
+  const e = hs.pending;
+  e.i = hs.initials.map(i => LETTERS[i]).join('');
+  const list = Store.cached().slice();
+  list.push(e);
+  list.sort((a, b) => b.s - a.s);           // ordenado por puntaje, nunca por nivel (§12.6)
+  while (list.length > CFG.maxScores) list.pop();
+  hs.list = list;
+  await Store.save(list);
+  hs.pending = null;
+  hs.fromRun = true;
+  screen = SCREEN.SCORES;
+}
+
+/* ============================ dibujo ============================ */
+function stroke(c, w, alpha) {
+  c.strokeStyle = CFG.ink; c.lineWidth = w || 1.6;
+  c.globalAlpha = alpha === undefined ? 1 : alpha;
+  c.lineJoin = 'round'; c.lineCap = 'round';
+}
+function drawPoly(c, pts, x, y, a, close) {
+  const ca = Math.cos(a), sa = Math.sin(a);
+  c.beginPath();
+  for (let i = 0; i < pts.length; i++) {
+    const px = x + pts[i].x * ca - pts[i].y * sa;
+    const py = y + pts[i].x * sa + pts[i].y * ca;
+    i ? c.lineTo(px, py) : c.moveTo(px, py);
+  }
+  if (close !== false) c.closePath();
+  c.stroke();
+}
+function drawShip(c, s, x, y) {
+  const a = s.a, ca = Math.cos(a), sa = Math.sin(a);
+  let alpha = 1;
+  const shielded = s.invuln > 0;
+  if (shielded) {
+    alpha = 0.26;                                   // mas transparente mientras dura (§8)
+    if (s.invuln < CFG.invulnBlink) alpha = (Math.sin(s.invuln * 26) > 0) ? 0.5 : 0.08;
+  } else if (s.grace > 0 && Math.sin(s.grace * 30) > 0) alpha = 0.35;
+
+  stroke(c, 1.9, alpha);
+  if (shielded) c.setLineDash([3.5, 3.5]);          // contorno punteado
+  c.beginPath();
+  SHIP_SEGS.forEach((seg, i) => {
+    if (s.damaged && DAMAGED_HIDE.includes(i)) return;   // dano visible permanente (§3)
+    c.moveTo(x + seg[0].x * ca - seg[0].y * sa, y + seg[0].x * sa + seg[0].y * ca);
+    c.lineTo(x + seg[1].x * ca - seg[1].y * sa, y + seg[1].x * sa + seg[1].y * ca);
+  });
+  c.stroke();
+  c.setLineDash([]);
+
+  // motores visibles (§3): crucero siempre encendido atras; al frenar,
+  // los retro salen por el frente. Girar enciende el motor de ese lado.
+  const L2 = CFG.shipLen / 2, Wd2 = CFG.shipWid / 2;
+  const tri = (P) => {
+    c.beginPath();
+    P.forEach((p, i) => {
+      const px = x + p.x * ca - p.y * sa, py = y + p.x * sa + p.y * ca;
+      i ? c.lineTo(px, py) : c.moveTo(px, py);
+    });
+    c.stroke();
+  };
+  const flame = (side) => tri([
+    { x: -L2 + 3, y: side * (Wd2 - 1.5) },
+    { x: -L2 - rnd(8, 15), y: side * (Wd2 + rnd(-1, 1.5)) },
+    { x: -L2 + 1.5, y: side * (Wd2 + 4) }
+  ]);
+  const cruise = () => tri([
+    { x: -L2 * 0.64, y: -3.0 },              // sale por la muesca de la popa
+    { x: -L2 - rnd(4, 10), y: 0 },
+    { x: -L2 * 0.64, y: 3.0 }
+  ]);
+  const retro = (side) => tri([
+    { x: L2 * 0.3, y: side * 2.2 },
+    { x: L2 + rnd(4, 9), y: side * 4.5 },
+    { x: L2 * 0.42, y: side * 6 }
+  ]);
+  stroke(c, 1.4, alpha * 0.9);
+  const braking = s.left && s.right;
+  if (braking) { retro(-1); retro(1); }
+  else {
+    cruise();
+    if (s.left)  flame(-1);
+    if (s.right) flame(1);
+  }
+  c.globalAlpha = 1;
+}
+
+function drawPickup(c, p) {
+  // Ambos son simetricos, huecos y con respiracion (§8). Se distinguen por
+  // silueta y por el sentido de las ondas, nunca por color.
+  const breathe = 1 + Math.sin(p.t * 4.2) * 0.16;
+  const R = p.r * breathe;
+  const repair = p.kind === 'repair';
+  const n = repair ? 4 : 6;                    // rombo vs hexagono
+  const spin = repair ? p.t * 0.35 : p.t * 0.6;
+
+  const ring = (rad) => {
+    c.beginPath();
+    for (let i = 0; i < n; i++) {
+      const a = spin + i * TAU / n;
+      const px = p.x + Math.cos(a) * rad, py = p.y + Math.sin(a) * rad;
+      i ? c.lineTo(px, py) : c.moveTo(px, py);
+    }
+    c.closePath(); c.stroke();
+  };
+  stroke(c, 1.8, 1);
+  ring(R);
+  if (repair) {
+    // cruz interior: la marca de reparacion
+    c.beginPath();
+    c.moveTo(p.x - R * 0.45, p.y); c.lineTo(p.x + R * 0.45, p.y);
+    c.moveTo(p.x, p.y - R * 0.45); c.lineTo(p.x, p.y + R * 0.45);
+    c.stroke();
+  } else {
+    ring(R * 0.42);
+  }
+  for (let k = 0; k < 3; k++) {
+    const ph = ((p.t * 0.75) + k / 3) % 1;
+    if (repair) {
+      // ondas que entran hacia adentro: absorbe, no irradia
+      stroke(c, 1.2, ph * 0.6);
+      c.beginPath(); c.arc(p.x, p.y, R * (0.6 + (1 - ph) * 2.0), 0, TAU); c.stroke();
+    } else {
+      stroke(c, 1.2, (1 - ph) * 0.55);
+      c.beginPath(); c.arc(p.x, p.y, R * (0.5 + ph * 1.9), 0, TAU); c.stroke();
+    }
+  }
+  c.globalAlpha = 1;
+}
+
+function renderWorld() {
+  // estela fantasma de LCD: se apaga rapido (§2)
+  tctx.globalCompositeOperation = 'destination-out';
+  tctx.fillStyle = 'rgba(0,0,0,' + CFG.trailFade + ')';
+  tctx.fillRect(0, 0, W, H);
+  tctx.globalCompositeOperation = 'source-over';
+
+  const c = tctx;
+  for (const m of G.meteors) { stroke(c, 1.6, 1); drawPoly(c, m.pts, m.x, m.y, m.a, true); }
+  for (const b of G.bullets) {
+    stroke(c, 2.2, 1);
+    c.beginPath(); c.moveTo(b.x, b.y);
+    c.lineTo(b.x - b.vx * 0.012, b.y - b.vy * 0.012); c.stroke();
+  }
+  for (const p of G.pickups) drawPickup(c, p);
+  for (const d of G.shards) {
+    const ca = Math.cos(d.a), sa = Math.sin(d.a);
+    stroke(c, 1.5, clamp(d.life / d.max, 0, 1));
+    c.beginPath();
+    c.moveTo(d.x + d.ax * ca - d.ay * sa, d.y + d.ax * sa + d.ay * ca);
+    c.lineTo(d.x + d.bx * ca - d.by * sa, d.y + d.bx * sa + d.by * ca);
+    c.stroke();
+  }
+  for (const r of G.rings) {
+    stroke(c, 1.4, clamp(r.life / r.max, 0, 1) * 0.8);
+    c.beginPath(); c.arc(r.x, r.y, r.r, 0, TAU); c.stroke();
+  }
+  const s = G.ship;
+  if (s && s.alive) for (const cpy of shipCopies(s)) drawShip(c, s, cpy.x, cpy.y);
+  c.globalAlpha = 1;
+}
+
+/* ============================ UI ============================ */
+function text(str, x, y, size, align, alpha) {
+  ctx.fillStyle = CFG.ink;
+  ctx.globalAlpha = alpha === undefined ? 1 : alpha;
+  ctx.font = size + 'px ui-monospace, SFMono-Regular, Menlo, Consolas, "Courier New", monospace';
+  ctx.textAlign = align || 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(str, x, y);
+  ctx.globalAlpha = 1;
+}
+function button(label, x, y, w, h, size) {
+  ctx.strokeStyle = CFG.ink; ctx.lineWidth = 1.6; ctx.globalAlpha = 0.9;
+  ctx.strokeRect(x - w / 2, y - h / 2, w, h);
+  ctx.globalAlpha = 1;
+  text(label, x, y + 1, size || 18);
+  const b = { x: x - w / 2, y: y - h / 2, w, h, label };
+  G.buttons.push(b);
+  return b;
+}
+function hit(b, t) { return t && t.x >= b.x && t.x <= b.x + b.w && t.y >= b.y && t.y <= b.y + b.h; }
+
+function drawMuteButton() {
+  const x = W - 34, y = 30, r = 12;
+  ctx.strokeStyle = CFG.ink; ctx.lineWidth = 1.6;
+  ctx.beginPath();
+  ctx.moveTo(x - 8, y - 4); ctx.lineTo(x - 4, y - 4); ctx.lineTo(x, y - 9);
+  ctx.lineTo(x, y + 9); ctx.lineTo(x - 4, y + 4); ctx.lineTo(x - 8, y + 4);
+  ctx.closePath(); ctx.stroke();
+  ctx.beginPath();
+  if (Sfx.muted) { ctx.moveTo(x + 4, y - 6); ctx.lineTo(x + 12, y + 6); ctx.moveTo(x + 12, y - 6); ctx.lineTo(x + 4, y + 6); }
+  else { ctx.arc(x + 4, y, 6, -0.9, 0.9); ctx.moveTo(x + 13, y - 6); ctx.arc(x + 4, y, 10, -0.7, 0.7); }
+  ctx.stroke();
+  G.buttons.push({ x: x - 26, y: y - 22, w: 52, h: 44, label: 'MUTE' });
+}
+function drawControlLines(y, size, alpha) {
+  const lines = ['LEFT SIDE — LEFT THRUSTER', 'RIGHT SIDE — RIGHT THRUSTER', 'BOTH SIDES — BRAKE'];
+  lines.forEach((l, i) => text(l, W / 2, y + i * (size * 1.5), size, 'center', alpha));
+}
+
+function drawMenu() {
+  const cy = H / 2;
+  text('MY SPACE DRIFT', W / 2, H * 0.19, Math.min(52, W * 0.073), 'center', 1);
+  text('— — — — — — — — —', W / 2, H * 0.19 + 34, 14, 'center', 0.4);
+  button('PLAY', W / 2, cy + 6, 190, 46, 20);
+  button('HIGH SCORES', W / 2, cy + 66, 190, 40, 15);
+  drawControlLines(H - 74, Math.min(13, W * 0.026), 0.55);
+  drawMuteButton();
+  if (G.attract) text('DEMO', 34, 30, 13, 'left', 0.5);
+}
+
+function drawHud() {
+  text('SCORE ' + String(Math.floor(G.score)).padStart(6, '0'), 18, 26, 15, 'left', 0.9);
+  text('LEVEL ' + G.level, W - 18, 26, 15, 'right', 0.9);
+  if (G.levelBanner > 0) {
+    const a = clamp(G.levelBanner / 0.35, 0, 1);
+    text('LEVEL ' + G.level, W / 2, H / 2, Math.min(64, W * 0.1), 'center', a);
+  }
+}
+
+function drawDead() {
+  const cy = H / 2;
+  text('GAME OVER', W / 2, cy - 92, Math.min(46, W * 0.075));
+  text(String(Math.floor(G.score)).padStart(6, '0'), W / 2, cy - 34, Math.min(56, W * 0.09));
+  text('LEVEL ' + G.level, W / 2, cy + 8, 17, 'center', 0.85);
+  if (hs.pending) {
+    text('NEW HIGH SCORE', W / 2, cy + 46, 18, 'center', (Math.sin(performance.now() / 180) > 0) ? 1 : 0.25);
+  } else {
+    button('PLAY AGAIN', W / 2, cy + 58, 200, 44, 19);
+    button('MENU', W / 2, cy + 112, 140, 34, 14);
+  }
+  drawControlLines(H - 58, Math.min(11, W * 0.022), 0.45);
+}
+
+function drawInitials() {
+  const cy = H / 2;
+  text('NEW HIGH SCORE', W / 2, cy - 110, Math.min(30, W * 0.05));
+  text('ENTER INITIALS', W / 2, cy - 76, 14, 'center', 0.6);
+  const size = Math.min(72, W * 0.11), gap = size * 1.15;
+  for (let i = 0; i < 3; i++) {
+    const x = W / 2 + (i - 1) * gap;
+    const on = i === hs.slot;
+    const blink = on && Math.sin(performance.now() / 200) > 0;
+    text(LETTERS[hs.initials[i]], x, cy, size, 'center', on ? (blink ? 1 : 0.35) : 0.75);
+    if (on) {
+      ctx.strokeStyle = CFG.ink; ctx.lineWidth = 2; ctx.globalAlpha = 0.8;
+      ctx.beginPath(); ctx.moveTo(x - size * 0.32, cy + size * 0.46); ctx.lineTo(x + size * 0.32, cy + size * 0.46); ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+  }
+  text('LEFT ▼   RIGHT ▲   BOTH — OK', W / 2, cy + 96, Math.min(15, W * 0.028), 'center', 0.6);
+}
+
+function drawScores() {
+  text('HIGH SCORES', W / 2, H * 0.13, Math.min(34, W * 0.055));
+  const list = hs.list.length ? hs.list : Store.cached();
+  const top = H * 0.13 + 42;
+  const rowH = Math.min(26, (H * 0.62) / CFG.maxScores);
+  const size = Math.min(16, rowH * 0.68);
+  const x0 = W / 2 - Math.min(200, W * 0.34), x1 = W / 2 + Math.min(200, W * 0.34);
+  if (!list.length) text('NO SCORES YET — PLAY A ROUND', W / 2, top + 40, 14, 'center', 0.55);
+  for (let i = 0; i < list.length; i++) {
+    const e = list[i], y = top + 14 + i * rowH;
+    const a = 1 - i * 0.045;
+    text(String(i + 1).padStart(2, ' '), x0, y, size, 'left', a * 0.6);
+    text(e.i, x0 + size * 2.6, y, size, 'left', a);
+    text(String(e.s).padStart(6, '0'), x1 - size * 4.6, y, size, 'right', a);
+    text('LV ' + e.l, x1, y, size, 'right', a * 0.6);
+  }
+  if (hs.fromRun) {
+    button('PLAY AGAIN', W / 2 - 90, H - 46, 160, 36, 15);
+    button('BACK', W / 2 + 90, H - 46, 140, 36, 15);
+  } else {
+    button('BACK', W / 2, H - 46, 150, 36, 15);
+  }
+}
+
+function drawRotate() {
+  text('ROTATE YOUR DEVICE', W / 2, H / 2, Math.min(24, W * 0.075));
+  ctx.strokeStyle = CFG.ink; ctx.lineWidth = 2; ctx.globalAlpha = 0.7;
+  const bw = Math.min(70, W * 0.22), bh = bw * 1.7, x = W / 2 - bw / 2, y = H / 2 - bh - 40;
+  ctx.strokeRect(x, y, bw, bh);
+  ctx.beginPath(); ctx.arc(W / 2, y + bh + 24, 16, -2.4, 0.8); ctx.stroke();
+  ctx.globalAlpha = 1;
+}
+
+/* ============================ pantallas ============================ */
+function handleMenuTap(t) {
+  for (const b of G.buttons) {
+    if (!hit(b, t)) continue;
+    Sfx.init(); Sfx.resume(); Sfx.ui();
+    if (b.label === 'MUTE') { Sfx.toggleMute(); return true; }
+    if (b.label === 'PLAY') { G.attract = false; startGame(false); return true; }
+    if (b.label === 'HIGH SCORES') { hs.fromRun = false; screen = SCREEN.SCORES; return true; }
+    if (b.label === 'BACK') { screen = SCREEN.MENU; Input.lastTouch = performance.now(); return true; }
+    if (b.label === 'PLAY AGAIN') { startGame(false); return true; }
+    if (b.label === 'MENU') { screen = SCREEN.MENU; Input.lastTouch = performance.now(); return true; }
+  }
+  return false;
+}
+
+function updateInitials(dt) {
+  const inc = (d) => {
+    hs.initials[hs.slot] = (hs.initials[hs.slot] + d + 26) % 26;
+    Sfx.ui();
+  };
+  if (Input.edgeBoth) {
+    hs.slot++;
+    Sfx.ui(); buzz(15);
+    if (hs.slot > 2) { hs.slot = 2; commitInitials(); }
+    hs.holdDir = 0;
+    return;
+  }
+  const L = Input.left && !Input.right, R = Input.right && !Input.left;
+  if (Input.edgeLeft && !Input.right)  { inc(-1); hs.holdDir = -1; hs.holdT = 0.34; }
+  if (Input.edgeRight && !Input.left)  { inc(1);  hs.holdDir = 1;  hs.holdT = 0.34; }
+  if ((hs.holdDir === -1 && L) || (hs.holdDir === 1 && R)) {
+    hs.holdT -= dt;
+    if (hs.holdT <= 0) { inc(hs.holdDir); hs.holdT = 0.11; }
+  } else if (!L && !R) hs.holdDir = 0;
+}
+
+/* ============================ loop ============================ */
+let last = performance.now();
+let deadHold = 0;
+
+function frame(now) {
+  let dt = (now - last) / 1000;
+  last = now;
+  dt = clamp(dt, 0, 0.05);              // sin pausa: si la app pierde foco, se reanuda seco (§14)
+
+  Input.update();
+  const tap = Input.consumeTap();
+  G.buttons = [];
+
+  // orientacion (§12.7)
+  if (H > W && screen !== SCREEN.ROTATE) { prevScreen = screen; screen = SCREEN.ROTATE; }
+  else if (H <= W && screen === SCREEN.ROTATE) { screen = prevScreen; Input.lastTouch = now; }
+
+  if (screen === SCREEN.PLAY) updatePlay(dt * G.timeScale);
+  else if (screen === SCREEN.ROTATE && prevScreen === SCREEN.PLAY) updatePlay(dt * G.timeScale); // no hay pausa (§14)
+  else if (screen === SCREEN.MENU) {
+    if (G.attract) updatePlay(dt * G.timeScale);
+    else if (now - Input.lastTouch > CFG.attractDelay * 1000) startGame(true);
+  } else if (screen === SCREEN.INITIALS) updateInitials(dt);
+  else if (screen === SCREEN.DEAD) {
+    deadHold += dt;
+    if (hs.pending && deadHold > 1.5) { hs.initials = [0, 0, 0]; hs.slot = 0; screen = SCREEN.INITIALS; }
+  }
+  if (screen !== SCREEN.DEAD) deadHold = 0;
+
+  // ---------- render ----------
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  ctx.fillStyle = CFG.bg;
+  ctx.fillRect(0, 0, W, H);
+  ctx.drawImage(gridCv, 0, 0, W, H);
+
+  const worldVisible = screen === SCREEN.PLAY || (screen === SCREEN.MENU && G.attract);
+  if (worldVisible) renderWorld();
+  if (screen === SCREEN.DEAD || screen === SCREEN.INITIALS) {
+    // el campo congelado queda de fondo, apagandose
+    tctx.globalCompositeOperation = 'destination-out';
+    tctx.fillStyle = 'rgba(0,0,0,0.05)';
+    tctx.fillRect(0, 0, W, H);
+    tctx.globalCompositeOperation = 'source-over';
+  }
+  if (screen !== SCREEN.SCORES && screen !== SCREEN.ROTATE) {
+    ctx.globalAlpha = (screen === SCREEN.MENU && G.attract) ? 0.55 : 1;
+    ctx.drawImage(trail, 0, 0, W, H);
+    ctx.globalAlpha = 1;
+  }
+
+  // destello de subida de nivel / dano
+  if (G.flash > 0 && worldVisible) {
+    ctx.fillStyle = CFG.ink; ctx.globalAlpha = clamp(G.flash, 0, 1) * 0.12;
+    ctx.fillRect(0, 0, W, H); ctx.globalAlpha = 1;
+  }
+
+  if (screen === SCREEN.PLAY) drawHud();
+  else if (screen === SCREEN.MENU) drawMenu();
+  else if (screen === SCREEN.DEAD) drawDead();
+  else if (screen === SCREEN.INITIALS) drawInitials();
+  else if (screen === SCREEN.SCORES) drawScores();
+  else if (screen === SCREEN.ROTATE) drawRotate();
+
+  // scanlines suaves del LCD
+  ctx.fillStyle = '#000'; ctx.globalAlpha = CFG.scanlineAlpha;
+  for (let y = 0; y < H; y += 3) ctx.fillRect(0, y, W, 1);
+  ctx.globalAlpha = 1;
+
+  // ---------- taps de menu ----------
+  if (tap) {
+    if (screen === SCREEN.MENU) {
+      Input.lastTouch = now;
+      if (G.attract) { G.attract = false; G.ship = null; G.meteors.length = 0; G.bullets.length = 0; G.pickups.length = 0; G.shards.length = 0; G.rings.length = 0; Sfx.engine(false); }
+      else handleMenuTap(tap);
+    } else if (screen === SCREEN.SCORES || screen === SCREEN.DEAD) {
+      handleMenuTap(tap);
+    }
+  }
+
+  requestAnimationFrame(frame);
+}
+
+/* ==================== enlace TV <-> celular (§20) ====================
+   Misma URL en los dos aparatos. La TV se abre normal y muestra un codigo
+   de 6 digitos; el celular se abre con ?ctrl, escribes ese codigo y se
+   conecta solo. El handshake pasa por el servidor publico de PeerJS (hace
+   falta internet una vez), pero los datos del control viajan directo por
+   WebRTC, asi que en la misma red el retraso es de milisegundos.
+   El celular manda las coordenadas normalizadas de sus dedos y la TV las
+   mete en Input.pointers: para el juego es identico a tocar la pantalla.
+   ==================================================================== */
+const Link = (() => {
+  const IS_CTRL = new URLSearchParams(location.search).has('ctrl');
+  const PREFIX  = 'vdrift-';
+  const LS_KEY  = 'vdrift.lastcode';
+  let peer = null, conn = null, myCode = '', tries = 0, box = null;
+
+  const el = (tag, id, parent) => {
+    const e = document.createElement(tag);
+    if (id) e.id = id;
+    (parent || document.body).appendChild(e);
+    return e;
+  };
+  const digits6 = () => String(Math.floor(100000 + Math.random() * 900000));
+  const ctrlUrl = () => location.origin + location.pathname + '?ctrl';
+
+  /* ------------------------- lado PANTALLA (TV) ------------------------- */
+  function showCode() {
+    box.hidden = false;
+    box.innerHTML = 'phone &rarr; ' + ctrlUrl() + '<b>' + myCode + '</b>';
+  }
+
+  function openPeer() {
+    myCode = digits6();
+    peer = new Peer(PREFIX + myCode);
+
+    peer.on('open', showCode);
+
+    peer.on('error', err => {
+      if (err.type === 'unavailable-id' && tries++ < 6) { peer.destroy(); openPeer(); return; }
+      box.hidden = false;
+      box.textContent = 'link error — ' + err.type;
+    });
+
+    peer.on('connection', c => {
+      if (conn) { try { conn.close(); } catch (e) {} }
+      conn = c;
+      c.on('open', () => {
+        box.innerHTML = 'controller linked';
+        setTimeout(() => { if (conn) box.hidden = true; }, 1600);
+        sendAspect();
+        Sfx.init(); Sfx.resume();
+        Input.lastTouch = performance.now();
+      });
+      c.on('data', onData);
+      c.on('close', () => { conn = null; clearRemote(); showCode(); });
+      c.on('error', () => { conn = null; clearRemote(); showCode(); });
+    });
+  }
+
+  function sendAspect() { if (conn && conn.open) conn.send({ t: 'ar', ar: W / H }); }
+
+  // los punteros remotos viven con llaves de texto para no chocar con el
+  // puntero del Magic Remote ni con dedos locales
+  function clearRemote() {
+    for (const k of [...Input.pointers.keys()]) {
+      if (typeof k === 'string' && k[0] === 'r') Input.pointers.delete(k);
+    }
+  }
+
+  function onData(m) {
+    if (!m || !m.t) return;
+    if (m.t === 'p') {                     // estado completo de los dedos
+      clearRemote();
+      for (const p of m.a) Input.pointers.set('r' + p[0], { x: p[1] * W, y: p[2] * H });
+    } else if (m.t === 't') {              // tap: sirve para los menus
+      Input.tapPos = { x: m.x * W, y: m.y * H };
+      Input.lastTouch = performance.now();
+      Sfx.init(); Sfx.resume();
+    }
+  }
+
+  function screenMode() {
+    box = el('div', 'link-code');
+    box.addEventListener('click', () => { Sfx.init(); Sfx.resume(); });
+    if (!window.Peer) { box.textContent = 'link unavailable — no internet'; return; }
+    openPeer();
+    window.addEventListener('resize', () => setTimeout(sendAspect, 150));
+  }
+
+  /* ------------------------ lado CONTROL (celular) ---------------------- */
+  function controllerMode() {
+    cv.style.display = 'none';
+
+    const root  = el('div', 'ctrl');
+    const title = el('h1', null, root);      title.textContent = 'MY SPACE DRIFT';
+    const hint  = el('p', null, root);       hint.textContent  = 'code shown on the tv';
+    const input = el('input', 'ctrl-code', root);
+    const msg   = el('p', 'ctrl-msg', root);
+    input.type = 'text'; input.inputMode = 'numeric'; input.maxLength = 6;
+    input.placeholder = '000000'; input.autocomplete = 'off';
+    msg.textContent = 'both devices on the same wi-fi';
+
+    if (!window.Peer) { msg.textContent = 'no internet — cannot pair'; input.disabled = true; return; }
+
+    const pad  = el('div', 'ctrl-pad');
+    pad.hidden = true;
+    const rect = el('div', null, pad); rect.className = 'pad';
+    const halves = [el('div', null, rect), el('div', null, rect)];
+    halves[0].className = halves[1].className = 'half';
+    halves[0].textContent = 'L'; halves[1].textContent = 'R';
+    let aspect = 16 / 9;
+
+    function layoutPad() {
+      const w = window.innerWidth, h = window.innerHeight;
+      const useW = Math.min(w, h * aspect);
+      rect.style.width  = useW + 'px';
+      rect.style.height = (useW / aspect) + 'px';
+    }
+    window.addEventListener('resize', layoutPad);
+    window.addEventListener('orientationchange', () => setTimeout(layoutPad, 150));
+
+    const pts = new Map();
+    const sendPts = () => {
+      if (!conn || !conn.open) return;
+      conn.send({ t: 'p', a: [...pts.entries()].map(([i, p]) => [i, p.x, p.y]) });
+      halves[0].classList.toggle('on', [...pts.values()].some(p => p.x < 0.5));
+      halves[1].classList.toggle('on', [...pts.values()].some(p => p.x >= 0.5));
+    };
+    const norm = e => {
+      const r = rect.getBoundingClientRect();
+      return {
+        x: clamp((e.clientX - r.left) / r.width,  0, 0.999),
+        y: clamp((e.clientY - r.top)  / r.height, 0, 0.999)
+      };
+    };
+
+    rect.addEventListener('pointerdown', e => {
+      rect.setPointerCapture && rect.setPointerCapture(e.pointerId);
+      const p = norm(e);
+      pts.set(e.pointerId, p);
+      if (conn && conn.open) conn.send({ t: 't', x: p.x, y: p.y });
+      sendPts();
+      e.preventDefault();
+    }, { passive: false });
+    rect.addEventListener('pointermove', e => {
+      if (!pts.has(e.pointerId)) return;
+      pts.set(e.pointerId, norm(e));
+      sendPts();
+    }, { passive: false });
+    const up = e => { if (pts.delete(e.pointerId)) sendPts(); };
+    rect.addEventListener('pointerup', up);
+    rect.addEventListener('pointercancel', up);
+    window.addEventListener('blur', () => { pts.clear(); sendPts(); });
+
+    function connect(code) {
+      msg.textContent = 'connecting…';
+      input.disabled = true;
+      peer = new Peer();
+      peer.on('open', () => {
+        conn = peer.connect(PREFIX + code, { reliable: true });
+        conn.on('open', () => {
+          try { localStorage.setItem(LS_KEY, code); } catch (e) {}
+          root.hidden = true; pad.hidden = false;
+          layoutPad();
+          navigator.wakeLock && navigator.wakeLock.request('screen').catch(() => {});
+        });
+        conn.on('data', m => { if (m && m.t === 'ar') { aspect = m.ar; layoutPad(); } });
+        conn.on('close', () => reset('disconnected'));
+        conn.on('error', () => reset('connection failed'));
+      });
+      peer.on('error', err => {
+        reset(err.type === 'peer-unavailable' ? 'no tv with that code' : 'error — ' + err.type);
+      });
+    }
+
+    function reset(why) {
+      try { peer && peer.destroy(); } catch (e) {}
+      peer = null; conn = null; pts.clear();
+      root.hidden = false; pad.hidden = true;
+      input.disabled = false; input.value = '';
+      msg.textContent = why;
+    }
+
+    input.addEventListener('input', () => {
+      input.value = input.value.replace(/\D/g, '').slice(0, 6);
+      if (input.value.length === 6) { input.blur(); connect(input.value); }   // conecta solo
+    });
+
+    let saved = '';
+    try { saved = localStorage.getItem(LS_KEY) || ''; } catch (e) {}
+    if (saved.length === 6) { input.value = saved; connect(saved); }
+    else setTimeout(() => input.focus(), 300);
+  }
+
+  return {
+    isController: IS_CTRL,
+    start() { IS_CTRL ? controllerMode() : screenMode(); }
+  };
+})();
+
+/* ============================ arranque ============================ */
+resize();
+if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
+  navigator.serviceWorker.register('sw.js').catch(() => {});   // offline; se ignora si no existe
+}
+Store.load().then(l => { hs.list = l; });
+document.addEventListener('visibilitychange', () => { if (document.hidden) Sfx.engine(false); last = performance.now(); });
+window.addEventListener('load', () => Link.start());
+if (!Link.isController) requestAnimationFrame(frame);   // el celular-control no renderiza el juego
+</script>
+</body>
+</html>
