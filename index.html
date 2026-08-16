@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<meta name="theme-color" content="#0f380f">
+<meta name="theme-color" content="#000000">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black">
@@ -13,29 +13,29 @@
 <title>MY SPACE DRIFT</title>
 <style>
   *{margin:0;padding:0;box-sizing:border-box}
-  html,body{width:100%;height:100%;overflow:hidden;background:#0f380f;
+  html,body{width:100%;height:100%;overflow:hidden;background:#000;
     -webkit-user-select:none;user-select:none;-webkit-touch-callout:none;
     -webkit-tap-highlight-color:transparent;touch-action:none;overscroll-behavior:none}
   canvas{display:block;width:100%;height:100%;touch-action:none;image-rendering:pixelated}
 
-  /* ---- control (celular): DOM puro, no pasa por el shader, se pinta a mano ---- */
-  #ctrl{position:fixed;inset:0;z-index:10;background:#0f380f;color:#9bbc0f;
+  /* ---- control (celular): DOM puro, no pasa por el shader, se pinta a mano
+         con los mismos cuatro tonos de la paleta ---- */
+  #ctrl{position:fixed;inset:0;z-index:10;background:#000;color:#fff;
     font:15px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;letter-spacing:1px;
     display:flex;align-items:center;justify-content:center;flex-direction:column;gap:18px}
-  #ctrl h1{font-size:19px;font-weight:400;letter-spacing:5px;opacity:.9}
-  #ctrl p{font-size:12px;opacity:.5;text-align:center;padding:0 24px;line-height:1.8}
-  #ctrl input{width:230px;padding:12px;background:transparent;border:1.6px solid #8bac0f;
-    color:#9bbc0f;font:32px ui-monospace,Menlo,Consolas,monospace;letter-spacing:10px;
+  #ctrl h1{font-size:19px;font-weight:400;letter-spacing:5px}
+  #ctrl p{font-size:12px;color:#a8a8a8;text-align:center;padding:0 24px;line-height:1.8}
+  #ctrl input{width:230px;padding:12px;background:transparent;border:2px solid #a8a8a8;
+    color:#fff;font:32px ui-monospace,Menlo,Consolas,monospace;letter-spacing:10px;
     text-align:center;outline:none;border-radius:0}
-  #ctrl input::placeholder{opacity:.25}
-  #ctrl-pad{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:#0f380f}
-  #ctrl-pad .pad{width:100%;max-width:100%;max-height:100%;display:flex;
-    border:1.6px solid rgba(139,172,15,.6)}
+  #ctrl input::placeholder{color:#545454}
+  #ctrl-pad{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:#000}
+  #ctrl-pad .pad{width:100%;max-width:100%;max-height:100%;display:flex;border:2px solid #a8a8a8}
   #ctrl-pad .half{flex:1;display:flex;align-items:center;justify-content:center;
-    font:20px ui-monospace,Menlo,Consolas,monospace;color:rgba(139,172,15,.35);
+    font:20px ui-monospace,Menlo,Consolas,monospace;color:#545454;
     transition:background .05s linear}
-  #ctrl-pad .half:first-child{border-right:1px solid rgba(139,172,15,.3)}
-  #ctrl-pad .half.on{background:rgba(155,188,15,.18);color:#9bbc0f}
+  #ctrl-pad .half:first-child{border-right:2px solid #545454}
+  #ctrl-pad .half.on{background:#a8a8a8;color:#000}
   #ctrl[hidden],#ctrl-pad[hidden]{display:none}   /* hidden pierde contra display:flex */
 </style>
 <script src="https://unpkg.com/peerjs@1.5.5/dist/peerjs.min.js" defer></script>
