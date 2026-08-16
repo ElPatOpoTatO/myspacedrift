@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Banco de sonido — My Space Drift</title>
+<!--
+  Dispara los sonidos del juego uno a uno para escucharlos. Carga index.html en un
+  iframe y llama a su modulo Sfx: no duplica ni una linea de audio, asi que no puede
+  desincronizarse del juego.
+
+  Servir desde la raiz del repo (el iframe necesita mismo origen):
+      npx http-server -p 8080     ->  http://localhost:8080/dev/audio-lab.html
+
+  Esto es la prueba de oido. La prueba automatica es dev/audio-test.mjs.
+-->
+<style>
+  :root { --bg:#050d06; --ink:#7dff9b; }
+  * { box-sizing: border-box; }
+  body {
+    margin:0; padding:24px; background:var(--bg); color:var(--ink);
+    font:14px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  h1 { font-size:15px; letter-spacing:.18em; text-transform:uppercase; margin:0 0 4px; }
+  p  { opacity:.6; margin:0 0 20px; max-width:56ch; }
+  .row { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:12px; }
+  button {
+    font:inherit; letter-spacing:.1em; text-transform:uppercase;
+    color:var(--ink); background:transparent; border:1px solid var(--ink);
+    padding:10px 14px; cursor:pointer; border-radius:2px;
+  }
+  button:hover  { background:var(--ink); color:var(--bg); }
+  button[aria-pressed="true"] { background:var(--ink); color:var(--bg); }
+  h2 { font-size:11px; letter-spacing:.2em; opacity:.5; margin:20px 0 8px; font-weight:400; }
+  iframe { width:360px; height:640px; border:1px solid rgba(125,255,155,.25); border-radius:2px; }
+  code { opacity:.55; }
+</style>
+</head>
+<body>
+
+<h1>Banco de sonido</h1>
+<p>
+  Cada boton llama al modulo <code>Sfx</code> del juego cargado abajo. Escucha si un
+  sonido se pisa con otro, si el motor tabletea a buen ritmo y si algo suena a grave
+  (no deberia: nada baja de 380&nbsp;Hz).
+</p>
+
+<h2>efectos</h2>
+<div class="row" id="fx"></div>
+
+<h2>estado</h2>
+<div class="row">
+  <button id="engine" aria-pressed="false">motor</button>
+  <button id="mute"   aria-pressed="false">mute</button>
+  <button id="quiet"  aria-pressed="false">quiet (modo demo)</button>
+</div>
+
+<h2>el juego</h2>
+<iframe id="game" src="../index.html" title="My Space Drift"></iframe>
+
+<script>
+  const FX = ['ui', 'shoot', 'destroy', 'pickup', 'repair', 'damage', 'death', 'level'];
+  const frame = document.getElementById('game');
+
+  // El modulo vive dentro del iframe. init()/resume() se llaman en cada gesto porque el
+  // navegador solo deja arrancar un AudioContext desde una interaccion del usuario.
+  function sfx() {
+    const s = frame.contentWindow && frame.contentWindow.Sfx;
+    if (!s) { alert('El juego aun no ha cargado.'); return null; }
+    s.init(); s.resume();
+    return s;
+  }
+
+  for (const name of FX) {
+    const b = document.createElement('button');
+    b.textContent = name;
+    b.onclick = () => { const s = sfx(); if (s) s[name](); };
+    document.getElementById('fx').append(b);
+  }
+
+  const toggle = (id, fn) => {
+    const b = document.getElementById(id);
+    b.onclick = () => {
+      const s = sfx(); if (!s) return;
+      b.setAttribute('aria-pressed', String(fn(s, b.getAttribute('aria-pressed') !== 'true')));
+    };
+  };
+  toggle('engine', (s, on) => { s.engine(on); return on; });
+  toggle('mute',   (s)     => s.toggleMute());
+  toggle('quiet',  (s, on) => { s.quiet = on; return s.quiet; });
+</script>
+
+</body>
+</html>
