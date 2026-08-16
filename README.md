@@ -9,10 +9,26 @@ Juego web (PWA) jugable desde el navegador.
 - `manifest.webmanifest` — instalable como app
 - `.nojekyll` — evita que GitHub Pages procese el sitio con Jekyll
 
+## Controles
+
+Hacen falta dos dispositivos: la partida se abre en una pantalla grande (TV,
+portátil) y el móvil hace de mando. La pantalla grande muestra un código de
+seis dígitos que se escribe en el móvil para emparejarlos; ambos tienen que
+estar en la misma red.
+
+Ya en el mando, se toca:
+
+- Lado izquierdo — propulsor izquierdo
+- Lado derecho — propulsor derecho
+- Ambos lados — freno
+
 ## Instalar
 
 Abrir el enlace en el móvil y usar "Añadir a pantalla de inicio". Tras la
 primera carga el juego funciona sin conexión.
+
+El emparejamiento usa PeerJS desde un CDN, así que la primera carga necesita
+internet aunque después el juego arranque offline desde la caché.
 
 ## Desarrollo
 
