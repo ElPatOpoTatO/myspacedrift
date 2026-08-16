@@ -44,8 +44,10 @@ console.log('\nel lienzo llena la pantalla');
   const m = await page.evaluate(() => {
     const cv = document.getElementById('screen');
     const vv = window.visualViewport;
+    // Wpx/Hpx son los px CSS reales. W/H son unidades de mundo (el alto vale
+    // siempre CFG.baseHeight), asi que no sirven para comparar contra el viewport.
     return {
-      W, H, dpr: DPR,
+      W: Wpx, H: Hpx, dpr: DPR,
       vw: Math.floor(vv.width), vh: Math.floor(vv.height),
       cssW: parseFloat(cv.style.width), cssH: parseFloat(cv.style.height),
       bufW: cv.width, bufH: cv.height,
@@ -90,7 +92,7 @@ console.log('\nmargenes seguros (notch)');
 
   const still = await page.evaluate(() => {
     const cv = document.getElementById('screen');
-    return { cssW: parseFloat(cv.style.width), W };
+    return { cssW: parseFloat(cv.style.width), W: Wpx };
   });
   check('el lienzo sigue llegando al borde fisico', still.cssW === still.W,
         `${still.cssW} vs ${still.W}`);
