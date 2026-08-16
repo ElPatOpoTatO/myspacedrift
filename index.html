@@ -18,11 +18,16 @@
     -webkit-tap-highlight-color:transparent;touch-action:none;overscroll-behavior:none}
   canvas{display:block;width:100%;height:100%;touch-action:none}
 
-  /* ---- enlace TV <-> celular ---- */
-  #link-code{position:fixed;left:0;right:0;bottom:16px;z-index:5;text-align:center;
+  /* ---- enlace TV <-> celular ----
+     Una sola linea pegada arriba al centro: el borde superior central es el
+     unico hueco que la HUD no usa (SCORE va a la izquierda, LEVEL/MUTE a la
+     derecha). Si no entra a lo ancho o queda ilegible, el script lo apaga. */
+  #link-code{position:fixed;left:0;right:0;top:0;z-index:5;text-align:center;
     color:#7dff9b;font:13px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
-    letter-spacing:1px;opacity:.8;line-height:1.9;text-transform:uppercase}
-  #link-code b{display:block;font-size:34px;letter-spacing:10px;margin-top:2px;font-weight:400}
+    letter-spacing:1px;opacity:.8;line-height:2.1;text-transform:uppercase;
+    white-space:nowrap;overflow:hidden}
+  #link-code i{display:inline-block;font-style:normal}   /* se mide para saber si entra */
+  #link-code b{font-size:1.5em;letter-spacing:.35em;margin-left:.9em;font-weight:400}
 
   #ctrl{position:fixed;inset:0;z-index:10;background:#050d06;color:#7dff9b;
     font:15px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;letter-spacing:1px;
@@ -60,7 +65,13 @@ const CFG = {
   // --- pantalla / estetica ---
   bg:            '#050d06',
   ink:           '#7dff9b',      // verde LCD unico
-  gridSize:      34,             // px de la cuadricula fija
+  // Todo el juego se mide en unidades virtuales: el ancho SIEMPRE vale
+  // baseWidth, pase lo que pase con la pantalla real (§2). El alto es lo unico
+  // que cambia: alto = baseWidth / (relacion de aspecto). Asi 1:1 es el campo
+  // mas grande posible (1 x 1) y un 16:9 es 1 x 0.56. La nave, las rocas y los
+  // textos ocupan la misma fraccion de pantalla en un celular que en una TV.
+  baseWidth:     1000,
+  gridSize:      34,             // lado de la cuadricula fija, en unidades
   gridAlpha:     0.085,
   trailFade:     0.42,           // 0..1 por frame. Mas alto = estela mas corta (§2)
   scanlineAlpha: 0.05,
@@ -108,6 +119,14 @@ const CFG = {
   levelBase:     700,
   levelStep:     600,
   refillTime:    3.2,            // s en volver a la densidad tras subir de nivel
+
+  // --- pistas de control (§4) ---
+  // Van en las dos esquinas de abajo y en el medio, pegadas al borde. Si en la
+  // pantalla REAL quedarian ilegibles, o si no hay ancho/alto donde meterlas,
+  // simplemente no se dibujan: mejor nada que un renglon aplastado.
+  hintPad:       20,             // margen al borde, en unidades
+  hintMinPx:     8.5,            // px CSS minimos de tipografia para molestarse
+  hintMinH:      300,            // alto virtual minimo (pantallas ultra anchas)
 
   // --- otros ---
   attractDelay:  6.0,            // s de inactividad en el menu antes del modo demo
@@ -241,17 +260,28 @@ let trail = document.createElement('canvas');
 let tctx = trail.getContext('2d');
 let gridCv = document.createElement('canvas');
 let gctx = gridCv.getContext('2d');
-let W = 0, H = 0, DPR = 1;
+// W/H son unidades VIRTUALES (W siempre = CFG.baseWidth). Wpx/Hpx son los px CSS
+// reales y SC el puente entre ambos: 1 unidad = SC px CSS. Nada del juego mira
+// Wpx/Hpx salvo el transform, la entrada y el chequeo de legibilidad.
+let W = 0, H = 0, Wpx = 0, Hpx = 0, SC = 1, DPR = 1;
+// referencia para tipografia de menus: en pantallas mas anchas que 16:9 el alto
+// es el que manda, si no la UI se sale por arriba y por abajo.
+function uiRef() { return Math.min(W, H * (16 / 9)); }
 
 function resize() {
   DPR = Math.min(window.devicePixelRatio || 1, 2);
-  W = Math.max(1, Math.floor(window.innerWidth));
-  H = Math.max(1, Math.floor(window.innerHeight));
-  for (const c of [cv, trail, gridCv]) { c.width = Math.floor(W * DPR); c.height = Math.floor(H * DPR); }
-  cv.style.width = W + 'px'; cv.style.height = H + 'px';
-  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
-  tctx.setTransform(DPR, 0, 0, DPR, 0, 0);
-  gctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  Wpx = Math.max(1, Math.floor(window.innerWidth));
+  Hpx = Math.max(1, Math.floor(window.innerHeight));
+  SC = Wpx / CFG.baseWidth;             // px CSS por unidad virtual
+  W = CFG.baseWidth;                    // el ancho del mundo NO cambia nunca
+  H = Hpx / SC;                         // ... solo el alto, segun la aspecto
+  const bw = Math.floor(Wpx * DPR), bh = Math.floor(Hpx * DPR);
+  for (const c of [cv, trail, gridCv]) { c.width = bw; c.height = bh; }
+  cv.style.width = Wpx + 'px'; cv.style.height = Hpx + 'px';
+  const k = DPR * SC;
+  ctx.setTransform(k, 0, 0, k, 0, 0);
+  tctx.setTransform(k, 0, 0, k, 0, 0);
+  gctx.setTransform(k, 0, 0, k, 0, 0);
   paintGrid();
   tctx.clearRect(0, 0, W, H);
 }
@@ -296,8 +326,9 @@ const Input = {
 const Key = { left: false, right: false };
 
 function pos(e) {
+  // el dedo llega en px CSS; el juego solo entiende unidades virtuales
   const r = cv.getBoundingClientRect();
-  return { x: e.clientX - r.left, y: e.clientY - r.top };
+  return { x: (e.clientX - r.left) / SC, y: (e.clientY - r.top) / SC };
 }
 cv.addEventListener('pointerdown', e => {
   cv.setPointerCapture && cv.setPointerCapture(e.pointerId);
@@ -1007,15 +1038,17 @@ function renderWorld() {
 }
 
 /* ============================ UI ============================ */
+const FONT = (size) => size + 'px ui-monospace, SFMono-Regular, Menlo, Consolas, "Courier New", monospace';
 function text(str, x, y, size, align, alpha) {
   ctx.fillStyle = CFG.ink;
   ctx.globalAlpha = alpha === undefined ? 1 : alpha;
-  ctx.font = size + 'px ui-monospace, SFMono-Regular, Menlo, Consolas, "Courier New", monospace';
+  ctx.font = FONT(size);
   ctx.textAlign = align || 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText(str, x, y);
   ctx.globalAlpha = 1;
 }
+function textWidth(str, size) { ctx.font = FONT(size); return ctx.measureText(str).width; }
 function button(label, x, y, w, h, size) {
   ctx.strokeStyle = CFG.ink; ctx.lineWidth = 1.6; ctx.globalAlpha = 0.9;
   ctx.strokeRect(x - w / 2, y - h / 2, w, h);
@@ -1040,35 +1073,55 @@ function drawMuteButton() {
   ctx.stroke();
   G.buttons.push({ x: x - 26, y: y - 22, w: 52, h: 44, label: 'MUTE' });
 }
-function drawControlLines(y, size, alpha) {
-  const lines = ['LEFT SIDE — LEFT THRUSTER', 'RIGHT SIDE — RIGHT THRUSTER', 'BOTH SIDES — BRAKE'];
-  lines.forEach((l, i) => text(l, W / 2, y + i * (size * 1.5), size, 'center', alpha));
+// Las pistas van donde estan los controles: la del motor izquierdo en la esquina
+// de abajo a la izquierda, la del derecho en la de la derecha y la del freno
+// justo en el medio. Todo pegado al borde, un solo renglon, el centro libre.
+function hintsFit(parts, size) {
+  if (size * SC < CFG.hintMinPx) return false;     // ilegible en la pantalla real
+  if (H < CFG.hintMinH) return false;              // pantalla demasiado achatada
+  const pad = CFG.hintPad, gap = size * 1.8;
+  const w = parts.map(p => textWidth(p, size));
+  if (pad + w[0] + w[1] + w[2] + pad + gap * 2 > W) return false;
+  if (pad + w[0] + gap > (W - w[1]) / 2) return false;   // choca con el del medio
+  if (pad + w[2] + gap > (W - w[1]) / 2) return false;
+  return true;
+}
+function drawHints(left, mid, right, size, alpha) {
+  if (!hintsFit([left, mid, right], size)) return;      // no entra: no se pone
+  const pad = CFG.hintPad, y = H - pad;
+  text(left,  pad,     y, size, 'left',   alpha);
+  text(mid,   W / 2,   y, size, 'center', alpha);
+  text(right, W - pad, y, size, 'right',  alpha);
+}
+function drawControlLines(size, alpha) {
+  drawHints('LEFT SIDE — LEFT THRUSTER', 'BOTH SIDES — BRAKE', 'RIGHT SIDE — RIGHT THRUSTER', size, alpha);
 }
 
 function drawMenu() {
-  const cy = H / 2;
-  text('MY SPACE DRIFT', W / 2, H * 0.19, Math.min(52, W * 0.073), 'center', 1);
+  const cy = H / 2, U = uiRef();
+  text('MY SPACE DRIFT', W / 2, H * 0.19, Math.min(52, U * 0.073), 'center', 1);
   text('— — — — — — — — —', W / 2, H * 0.19 + 34, 14, 'center', 0.4);
   button('PLAY', W / 2, cy + 6, 190, 46, 20);
   button('HIGH SCORES', W / 2, cy + 66, 190, 40, 15);
-  drawControlLines(H - 74, Math.min(13, W * 0.026), 0.55);
+  drawControlLines(Math.min(14, U * 0.026), 0.55);
   drawMuteButton();
   if (G.attract) text('DEMO', 34, 30, 13, 'left', 0.5);
 }
 
 function drawHud() {
+  // el marcador vive en las dos esquinas de arriba: el centro es para jugar
   text('SCORE ' + String(Math.floor(G.score)).padStart(6, '0'), 18, 26, 15, 'left', 0.9);
   text('LEVEL ' + G.level, W - 18, 26, 15, 'right', 0.9);
   if (G.levelBanner > 0) {
     const a = clamp(G.levelBanner / 0.35, 0, 1);
-    text('LEVEL ' + G.level, W / 2, H / 2, Math.min(64, W * 0.1), 'center', a);
+    text('LEVEL ' + G.level, W / 2, H / 2, Math.min(64, uiRef() * 0.1), 'center', a);
   }
 }
 
 function drawDead() {
-  const cy = H / 2;
-  text('GAME OVER', W / 2, cy - 92, Math.min(46, W * 0.075));
-  text(String(Math.floor(G.score)).padStart(6, '0'), W / 2, cy - 34, Math.min(56, W * 0.09));
+  const cy = H / 2, U = uiRef();
+  text('GAME OVER', W / 2, cy - 92, Math.min(46, U * 0.075));
+  text(String(Math.floor(G.score)).padStart(6, '0'), W / 2, cy - 34, Math.min(56, U * 0.09));
   text('LEVEL ' + G.level, W / 2, cy + 8, 17, 'center', 0.85);
   if (hs.pending) {
     text('NEW HIGH SCORE', W / 2, cy + 46, 18, 'center', (Math.sin(performance.now() / 180) > 0) ? 1 : 0.25);
@@ -1076,14 +1129,14 @@ function drawDead() {
     button('PLAY AGAIN', W / 2, cy + 58, 200, 44, 19);
     button('MENU', W / 2, cy + 112, 140, 34, 14);
   }
-  drawControlLines(H - 58, Math.min(11, W * 0.022), 0.45);
+  drawControlLines(Math.min(12, U * 0.022), 0.45);
 }
 
 function drawInitials() {
-  const cy = H / 2;
-  text('NEW HIGH SCORE', W / 2, cy - 110, Math.min(30, W * 0.05));
+  const cy = H / 2, U = uiRef();
+  text('NEW HIGH SCORE', W / 2, cy - 110, Math.min(30, U * 0.05));
   text('ENTER INITIALS', W / 2, cy - 76, 14, 'center', 0.6);
-  const size = Math.min(72, W * 0.11), gap = size * 1.15;
+  const size = Math.min(72, U * 0.11), gap = size * 1.15;
   for (let i = 0; i < 3; i++) {
     const x = W / 2 + (i - 1) * gap;
     const on = i === hs.slot;
@@ -1095,16 +1148,17 @@ function drawInitials() {
       ctx.globalAlpha = 1;
     }
   }
-  text('LEFT ▼   RIGHT ▲   BOTH — OK', W / 2, cy + 96, Math.min(15, W * 0.028), 'center', 0.6);
+  drawHints('LEFT ▼ PREV', 'BOTH — OK', 'RIGHT ▲ NEXT', Math.min(14, U * 0.028), 0.6);
 }
 
 function drawScores() {
-  text('HIGH SCORES', W / 2, H * 0.13, Math.min(34, W * 0.055));
+  const U = uiRef();
+  text('HIGH SCORES', W / 2, H * 0.13, Math.min(34, U * 0.055));
   const list = hs.list.length ? hs.list : Store.cached();
   const top = H * 0.13 + 42;
   const rowH = Math.min(26, (H * 0.62) / CFG.maxScores);
   const size = Math.min(16, rowH * 0.68);
-  const x0 = W / 2 - Math.min(200, W * 0.34), x1 = W / 2 + Math.min(200, W * 0.34);
+  const x0 = W / 2 - Math.min(200, U * 0.34), x1 = W / 2 + Math.min(200, U * 0.34);
   if (!list.length) text('NO SCORES YET — PLAY A ROUND', W / 2, top + 40, 14, 'center', 0.55);
   for (let i = 0; i < list.length; i++) {
     const e = list[i], y = top + 14 + i * rowH;
@@ -1123,11 +1177,14 @@ function drawScores() {
 }
 
 function drawRotate() {
-  text('ROTATE YOUR DEVICE', W / 2, H / 2, Math.min(24, W * 0.075));
-  ctx.strokeStyle = CFG.ink; ctx.lineWidth = 2; ctx.globalAlpha = 0.7;
-  const bw = Math.min(70, W * 0.22), bh = bw * 1.7, x = W / 2 - bw / 2, y = H / 2 - bh - 40;
+  // Esta pantalla sale en vertical, donde el lado corto es el ancho: se mide
+  // contra el lado corto para que no quede diminuta en un celular.
+  const S = Math.min(W, H);
+  text('ROTATE YOUR DEVICE', W / 2, H / 2, S * 0.06);
+  ctx.strokeStyle = CFG.ink; ctx.lineWidth = S * 0.005; ctx.globalAlpha = 0.7;
+  const bw = S * 0.17, bh = bw * 1.7, x = W / 2 - bw / 2, y = H / 2 - bh - S * 0.17;
   ctx.strokeRect(x, y, bw, bh);
-  ctx.beginPath(); ctx.arc(W / 2, y + bh + 24, 16, -2.4, 0.8); ctx.stroke();
+  ctx.beginPath(); ctx.arc(W / 2, y + bh + S * 0.06, S * 0.04, -2.4, 0.8); ctx.stroke();
   ctx.globalAlpha = 1;
 }
 
@@ -1197,7 +1254,7 @@ function frame(now) {
   if (screen !== SCREEN.DEAD) deadHold = 0;
 
   // ---------- render ----------
-  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  ctx.setTransform(DPR * SC, 0, 0, DPR * SC, 0, 0);   // todo se dibuja en unidades
   ctx.fillStyle = CFG.bg;
   ctx.fillRect(0, 0, W, H);
   ctx.drawImage(gridCv, 0, 0, W, H);
@@ -1230,9 +1287,11 @@ function frame(now) {
   else if (screen === SCREEN.SCORES) drawScores();
   else if (screen === SCREEN.ROTATE) drawRotate();
 
-  // scanlines suaves del LCD
+  // scanlines suaves del LCD: son el vidrio del aparato, no el mundo, asi que
+  // se dibujan en px reales para que queden finas en cualquier pantalla
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
   ctx.fillStyle = '#000'; ctx.globalAlpha = CFG.scanlineAlpha;
-  for (let y = 0; y < H; y += 3) ctx.fillRect(0, y, W, 1);
+  for (let y = 0; y < Hpx; y += 3) ctx.fillRect(0, y, Wpx, 1);
   ctx.globalAlpha = 1;
 
   // ---------- taps de menu ----------
@@ -1262,7 +1321,7 @@ const Link = (() => {
   const IS_CTRL = new URLSearchParams(location.search).has('ctrl');
   const PREFIX  = 'vdrift-';
   const LS_KEY  = 'vdrift.lastcode';
-  let peer = null, conn = null, myCode = '', tries = 0, box = null;
+  let peer = null, conn = null, myCode = '', tries = 0, box = null, linked = false;
 
   const el = (tag, id, parent) => {
     const e = document.createElement(tag);
@@ -1274,9 +1333,28 @@ const Link = (() => {
   const ctrlUrl = () => location.origin + location.pathname + '?ctrl';
 
   /* ------------------------- lado PANTALLA (TV) ------------------------- */
+  // Aviso de estado: fuera del flujo del codigo, tipografia por defecto.
+  function say(t) { if (!box) return; box.hidden = false; box.style.fontSize = ''; box.textContent = t; }
+
+  // El codigo va arriba al centro, en un solo renglon y a escala de la pantalla
+  // (misma logica que el resto: una fraccion fija del ancho). Si no entra,
+  // primero suelta la URL y se queda con el codigo pelado; si tampoco entra,
+  // simplemente no se pone.
   function showCode() {
+    if (!box || linked) return;
+    const px = Wpx * 0.014;
+    if (px < CFG.hintMinPx) { box.hidden = true; return; }   // ilegible: mejor nada
     box.hidden = false;
-    box.innerHTML = 'phone &rarr; ' + ctrlUrl() + '<b>' + myCode + '</b>';
+    box.style.fontSize = px + 'px';
+    // solo el centro: los extremos de arriba son de SCORE / LEVEL / MUTE
+    const room = Wpx * 0.72;
+    const put = (html) => {
+      box.innerHTML = '<i>' + html + '</i>';
+      return box.firstChild.getBoundingClientRect().width <= room;
+    };
+    if (put('phone &rarr; ' + ctrlUrl() + '<b>' + myCode + '</b>')) return;
+    if (put('<b>' + myCode + '</b>')) return;                // sin la url, solo el codigo
+    box.hidden = true;
   }
 
   function openPeer() {
@@ -1287,23 +1365,23 @@ const Link = (() => {
 
     peer.on('error', err => {
       if (err.type === 'unavailable-id' && tries++ < 6) { peer.destroy(); openPeer(); return; }
-      box.hidden = false;
-      box.textContent = 'link error — ' + err.type;
+      say('link error — ' + err.type);
     });
 
     peer.on('connection', c => {
       if (conn) { try { conn.close(); } catch (e) {} }
       conn = c;
       c.on('open', () => {
-        box.innerHTML = 'controller linked';
+        linked = true;
+        say('controller linked');
         setTimeout(() => { if (conn) box.hidden = true; }, 1600);
         sendAspect();
         Sfx.init(); Sfx.resume();
         Input.lastTouch = performance.now();
       });
       c.on('data', onData);
-      c.on('close', () => { conn = null; clearRemote(); showCode(); });
-      c.on('error', () => { conn = null; clearRemote(); showCode(); });
+      c.on('close', () => { conn = null; linked = false; clearRemote(); showCode(); });
+      c.on('error', () => { conn = null; linked = false; clearRemote(); showCode(); });
     });
   }
 
@@ -1332,9 +1410,10 @@ const Link = (() => {
   function screenMode() {
     box = el('div', 'link-code');
     box.addEventListener('click', () => { Sfx.init(); Sfx.resume(); });
-    if (!window.Peer) { box.textContent = 'link unavailable — no internet'; return; }
+    if (!window.Peer) { say('link unavailable — no internet'); return; }
     openPeer();
-    window.addEventListener('resize', () => setTimeout(sendAspect, 150));
+    // al cambiar de tamano hay que rehacer la cuenta de si el codigo entra
+    window.addEventListener('resize', () => setTimeout(() => { sendAspect(); showCode(); }, 150));
   }
 
   /* ------------------------ lado CONTROL (celular) ---------------------- */
