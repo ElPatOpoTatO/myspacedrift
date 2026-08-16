@@ -65,6 +65,11 @@ const CFG = {
   // que un juego nativo se disena en estos cuatro y nada mas.
   gbPalette:     ['#000000', '#545454', '#a8a8a8', '#ffffff'],   // de oscuro a claro
   lcdRows:       144,            // exactamente las filas de la Game Boy
+  // El mundo se mide en unidades propias y su ALTO vale siempre baseHeight,
+  // pase lo que pase con la pantalla real. Lo unico que cambia con el aparato
+  // es cuanto ancho se ve. Sin esto el punto del LCD cambiaria de tamano y la
+  // nave encogeria en las pantallas grandes (§21.2).
+  baseHeight:    480,
   tile:          8,             // la rejilla de 8x8 a la que se alinea toda la interfaz
   lcdGain:       1.0,            // la escena ya se dibuja en los tonos de la paleta
   lcdGrid:       0.10,           // fuerza de la reticula de puntos entre celdas (0 = sin reticula)
@@ -274,24 +279,31 @@ function buzz(ms) { if (navigator.vibrate) { try { navigator.vibrate(ms); } catc
 // baja (CFG.lcdRows filas): los trazos se rasterizan ya del tamano del pixel
 // del LCD. Lo visible es 'cv', el canvas WebGL donde el shader cuantiza esa
 // escena a la paleta del Game Boy y la agranda sin interpolar (§21).
-// Todo el resto del juego sigue midiendo en px CSS (W/H): nada mas cambia.
+// El juego mide en UNIDADES DE MUNDO: H vale siempre CFG.baseHeight y W sale
+// de la relacion de aspecto. Wpx/Hpx son los px CSS reales y SC el puente
+// (1 unidad = SC px CSS); nadie mira Wpx/Hpx salvo el transform y la entrada.
+// Gracias a eso PIX es constante: el punto del LCD siempre mide lo mismo y el
+// buffer tiene siempre las 144 filas de la Game Boy.
 const cv = document.getElementById('screen');
 const scene = document.createElement('canvas');
 const ctx = scene.getContext('2d');
 let trail = document.createElement('canvas');
 let tctx = trail.getContext('2d');
-let W = 0, H = 0, DPR = 1, PIX = 1;
+let W = 0, H = 0, Wpx = 0, Hpx = 0, SC = 1, DPR = 1, PIX = 1;
 
 function resize() {
   DPR = Math.min(window.devicePixelRatio || 1, 2);
-  W = Math.max(1, Math.floor(window.innerWidth));
-  H = Math.max(1, Math.floor(window.innerHeight));
-  PIX = clamp(CFG.lcdRows / H, 0.2, 1);            // 1 = pantalla mas chica que el buffer LCD
+  Wpx = Math.max(1, Math.floor(window.innerWidth));
+  Hpx = Math.max(1, Math.floor(window.innerHeight));
+  H = CFG.baseHeight;                             // el alto del mundo NO cambia nunca
+  SC = Hpx / H;                                   // px CSS por unidad de mundo
+  W = Wpx / SC;                                   // ... solo cambia cuanto ancho se ve
+  PIX = CFG.lcdRows / CFG.baseHeight;             // constante por construccion
   const bw = Math.max(1, Math.round(W * PIX)), bh = Math.max(1, Math.round(H * PIX));
   for (const c of [scene, trail]) { c.width = bw; c.height = bh; }
   LW = bw;                                        // el hit-test lo necesita antes del primer frame
-  cv.width = Math.floor(W * DPR); cv.height = Math.floor(H * DPR);
-  cv.style.width = W + 'px'; cv.style.height = H + 'px';
+  cv.width = Math.floor(Wpx * DPR); cv.height = Math.floor(Hpx * DPR);
+  cv.style.width = Wpx + 'px'; cv.style.height = Hpx + 'px';
   ctx.setTransform(PIX, 0, 0, PIX, 0, 0);
   ctx.imageSmoothingEnabled = false;
   tctx.setTransform(1, 0, 0, 1, 0, 0);            // la estela se escribe por pixel, sin transform
@@ -455,8 +467,9 @@ const Input = {
 const Key = { left: false, right: false };
 
 function pos(e) {
+  // el dedo llega en px CSS; el juego solo entiende unidades de mundo
   const r = cv.getBoundingClientRect();
-  return { x: e.clientX - r.left, y: e.clientY - r.top };
+  return { x: (e.clientX - r.left) / SC, y: (e.clientY - r.top) / SC };
 }
 cv.addEventListener('pointerdown', e => {
   cv.setPointerCapture && cv.setPointerCapture(e.pointerId);
@@ -1226,11 +1239,11 @@ const LH = () => scene.height;                 // alto: siempre CFG.lcdRows
 function uiBegin() { ctx.setTransform(1, 0, 0, 1, 0, 0); LW = scene.width; }
 function uiEnd()   { ctx.setTransform(PIX, 0, 0, PIX, 0, 0); }
 
-// Los botones se guardan en px CSS porque los toques llegan en px CSS.
-function cssBox(x, y, w, h, label) {
+// La interfaz se dibuja en puntos de LCD, pero los toques llegan en unidades
+// de mundo: las cajas de los botones se guardan convertidas.
+function worldBox(x, y, w, h, label) {
   return { x: x / PIX, y: y / PIX, w: w / PIX, h: h / PIX, label };
 }
-function pushBtn(label, x, y, w, h) { G.buttons.push(cssBox(x, y, w, h, label)); }
 function hit(b, t) { return t && t.x >= b.x && t.x <= b.x + b.w && t.y >= b.y && t.y <= b.y + b.h; }
 // Un boton esta "apretado" mientras haya un dedo encima: es el estado
 // resaltado de los menus de la Game Boy y ademas da respuesta al toque.
@@ -1390,7 +1403,7 @@ function winBox(x, y, w, h, inverted) {
 // principal, y la fila entera en negativo mientras el dedo la aprieta.
 function menuRow(label, x, y, w, primary) {
   const h = 12;
-  const box = cssBox(x, y, w, h, label);
+  const box = worldBox(x, y, w, h, label);
   const on = pressed(box);
   if (on) { ctx.fillStyle = TONE[3]; ctx.fillRect(x, y, w, h); }
   if (primary && !on) text('▶', x + 3, y + 3, 1, 'left', 2 + (blink(320) ? 1 : 0));
@@ -1436,7 +1449,7 @@ const MUTE_SCALE = 2;
 const muteIcon = () => ({ x: LW - 2 * T - 4, y: 4, s: MUTE_SCALE });
 function muteBox() {
   const m = muteIcon(), pad = 5;
-  return cssBox(m.x - pad, m.y - pad, 8 * m.s + 2 * pad, 8 * m.s + 2 * pad, 'MUTE');
+  return worldBox(m.x - pad, m.y - pad, 8 * m.s + 2 * pad, 8 * m.s + 2 * pad, 'MUTE');
 }
 function muteActive() {
   return screen === SCREEN.PLAY || screen === SCREEN.MENU
