@@ -77,14 +77,16 @@ console.log('\nmargenes seguros (notch)');
   check('SAFE lee los cuatro margenes',
         safe.t === 20 && safe.r === 44 && safe.b === 30 && safe.l === 44, JSON.stringify(safe));
 
+  // Se mide el icono, no su caja de toque: la caja se deja mas grande a proposito para
+  // que el dedo la acierte, y que ese margen invisible roce el recorte no molesta.
   const hud = await page.evaluate(() => {
-    G.buttons = [];
-    drawMuteButton();
-    const b = G.buttons.find(x => x.label === 'MUTE');
-    return { muteRight: W - (b.x + b.w), W, r: SAFE.r };
+    const m = muteIcon();
+    return { iconRight: (LW - (m.x + 8 * m.s)) / PIX, iconTop: m.y / PIX, r: SAFE.r, t: SAFE.t };
   });
-  check('el boton de mute se aparta del recorte derecho', hud.muteRight >= hud.r,
-        `borde=${hud.muteRight} margen=${hud.r}`);
+  check('el icono de mute se aparta del recorte derecho', hud.iconRight >= hud.r,
+        `borde=${hud.iconRight.toFixed(1)} margen=${hud.r}`);
+  check('y del recorte de arriba', hud.iconTop >= hud.t,
+        `borde=${hud.iconTop.toFixed(1)} margen=${hud.t}`);
 
   const still = await page.evaluate(() => {
     const cv = document.getElementById('screen');

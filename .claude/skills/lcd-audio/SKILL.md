@@ -55,8 +55,13 @@ Privadas dentro del IIFE:
 | `fresh(key, ms)` | Limitador. `false` si ese sonido ya sonó hace menos de `ms`. |
 | `audible()` | `ready && !muted && !quiet`. |
 
-Públicas: `init(ctx?)`, `resume()`, `tones`, `muted`, `quiet`, `toggleMute()`, `engine(on)`,
-y los ocho efectos `ui shoot destroy pickup repair damage death level`.
+Públicas: `init(ctx?)`, `resume()`, `tones`, `muted`, `quiet`, `setMuted(m)`, `toggleMute()`,
+`engine(on)`, y los ocho efectos `ui shoot destroy pickup repair damage death level`.
+
+`setMuted` aplica el silencio **sin guardarlo** — lo usa la carga inicial. `toggleMute` es
+el que además persiste, a través del módulo `Prefs` (clave `vectordrift:muted`). El audio
+no guarda nada por su cuenta: si necesitas persistir otra preferencia, amplía `Prefs`, no
+inventes un segundo mecanismo.
 
 ### Los ocho efectos
 
