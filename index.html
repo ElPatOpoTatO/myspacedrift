@@ -127,6 +127,10 @@ const CFG = {
   repeatFirst:   0.34,           // s hasta la primera repeticion al mantener un lado
   repeatNext:    0.11,           // s entre repeticiones
 
+  // --- control remoto (§4.3) ---
+  remoteBeat:    0.25,           // s entre latidos del celular mientras tiene un dedo apoyado
+  remoteTimeout: 1.0,            // s de silencio tras los que la TV suelta los motores sola
+
   // --- otros ---
   attractDelay:  6.0,            // s de inactividad en el menu antes del modo demo
   maxScores:     10,
@@ -547,17 +551,51 @@ cv.addEventListener('pointerdown', e => {
   e.preventDefault();
 }, { passive: false });
 cv.addEventListener('pointermove', e => {
+  // el mouse se solto fuera de la ventana y nunca nos llego el up: el primer
+  // movimiento sin botones apretados lo delata
+  if (e.pointerType === 'mouse' && e.buttons === 0) { drop(e); return; }
   const old = Input.pointers.get(e.pointerId);
   if (!old) return;
   const p = pos(e);
   if (old.ui) p.ui = true;          // moverse un pixel no convierte el boton en motor
   Input.pointers.set(e.pointerId, p);
 }, { passive: false });
+
+/* ---------------- red de seguridad contra motores trabados (§4.3) ----------
+   Un motor que se queda encendido solo es un puntero que quedo en el mapa sin
+   su pointerup. Pasa mas de lo que parece: el navegador se queda el gesto, se
+   pierde la captura del puntero, la app se va a segundo plano con el dedo
+   apoyado, o se suelta una tecla con la ventana sin foco. Ninguno de esos
+   casos avisa por el camino normal, asi que hay que cerrarlos uno por uno.
+   -------------------------------------------------------------------- */
 function drop(e) { Input.pointers.delete(e.pointerId); }
-cv.addEventListener('pointerup', drop);
-cv.addEventListener('pointercancel', drop);
+function releaseLocalPointers() {           // los remotos tienen llave de texto
+  for (const k of [...Input.pointers.keys()]) if (typeof k !== 'string') Input.pointers.delete(k);
+}
+function releaseAllInput() {
+  Input.pointers.clear();
+  Key.left = false; Key.right = false;      // el blur solo limpiaba los punteros
+}
+
+for (const t of ['pointerup', 'pointercancel']) {
+  cv.addEventListener(t, drop);
+  window.addEventListener(t, drop);         // por si el up cae fuera del canvas
+}
 cv.addEventListener('pointerleave', drop);
-window.addEventListener('blur', () => Input.pointers.clear());
+cv.addEventListener('lostpointercapture', drop);
+
+// Los eventos de toque traen la lista completa de dedos vivos: si no queda
+// ninguno, no puede quedar ningun puntero local apretado. Es la unica
+// reconciliacion que el navegador nos regala, y no depende de pointerup.
+const noTouchesLeft = e => { if (e.touches && e.touches.length === 0) releaseLocalPointers(); };
+window.addEventListener('touchend', noTouchesLeft, { passive: true });
+window.addEventListener('touchcancel', noTouchesLeft, { passive: true });
+
+window.addEventListener('blur', releaseAllInput);
+window.addEventListener('pagehide', releaseAllInput);
+// En el celular, cambiar de app o bloquear la pantalla dispara esto y muchas
+// veces NO dispara blur: sin esta linea se vuelve con el motor encendido.
+document.addEventListener('visibilitychange', () => { if (document.hidden) releaseAllInput(); });
 
 // Teclado, util para probar en escritorio
 window.addEventListener('keydown', e => {
@@ -1721,6 +1759,7 @@ function frame(now) {
   last = now;
   dt = clamp(dt, 0, 0.05);              // sin pausa: si la app pierde foco, se reanuda seco (§14)
 
+  Link.tick(now);                       // suelta los motores si el celular dejo de latir
   Input.update();
   const tap = Input.consumeTap();
   G.buttons = [];
@@ -1879,11 +1918,23 @@ const Link = (() => {
     }
   }
 
+  // Si el celular deja de latir con dedos apoyados es que se durmio, se fue a
+  // segundo plano o la red se trabo. Sin esto los motores se quedan encendidos
+  // hasta reiniciar el juego, porque el ultimo estado recibido vale para
+  // siempre (§4.3).
+  let heldSince = 0;
+  function tick(now) {
+    if (!heldSince) return;
+    if (now - heldSince > CFG.remoteTimeout * 1000) { clearRemote(); heldSince = 0; }
+  }
+
   function onData(m) {
     if (!m || !m.t) return;
     if (m.t === 'p') {                     // estado completo de los dedos
       clearRemote();
       for (const p of m.a) Input.pointers.set('r' + p[0], { x: p[1] * W, y: p[2] * H });
+      // mientras haya dedos, el celular late; el silencio es lo que se vigila
+      heldSince = m.a.length ? performance.now() : 0;
     } else if (m.t === 't') {              // tap: sirve para los menus
       Input.tapPos = { x: m.x * W, y: m.y * H };
       Input.lastTouch = performance.now();
@@ -1958,9 +2009,25 @@ const Link = (() => {
       sendPts();
     }, { passive: false });
     const up = e => { if (pts.delete(e.pointerId)) sendPts(); };
-    rect.addEventListener('pointerup', up);
-    rect.addEventListener('pointercancel', up);
-    window.addEventListener('blur', () => { pts.clear(); sendPts(); });
+    for (const t of ['pointerup', 'pointercancel']) {
+      rect.addEventListener(t, up);
+      window.addEventListener(t, up);        // por si el up cae fuera del pad
+    }
+    rect.addEventListener('lostpointercapture', up);
+    window.addEventListener('touchend', e => { if (e.touches && !e.touches.length && pts.size) { pts.clear(); sendPts(); } }, { passive: true });
+
+    // Soltar todo y avisarle a la TV. Bloquear la pantalla o cambiar de app
+    // dispara visibilitychange y muchas veces no dispara blur: sin esto, el
+    // celular deja el dedo apretado del otro lado y la TV nunca se entera.
+    const releasePad = () => { if (pts.size) { pts.clear(); sendPts(); } };
+    window.addEventListener('blur', releasePad);
+    window.addEventListener('pagehide', releasePad);
+    document.addEventListener('visibilitychange', () => { if (document.hidden) releasePad(); });
+
+    // Latido: mientras haya un dedo apoyado se reenvia el estado. Si el celular
+    // se duerme o la red se traba, el silencio es lo que le permite a la TV
+    // darse cuenta y soltar los motores sola.
+    setInterval(() => { if (pts.size) sendPts(); }, CFG.remoteBeat * 1000);
 
     function connect(code) {
       msg.textContent = 'connecting…';
@@ -2006,7 +2073,8 @@ const Link = (() => {
     isController: IS_CTRL,
     start() { IS_CTRL ? controllerMode() : screenMode(); },
     url: ctrlUrl,
-    status() { return state; }
+    status() { return state; },
+    tick
   };
 })();
 
