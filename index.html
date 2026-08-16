@@ -1781,7 +1781,7 @@ function drawLinkCode(x, y, s, align) {
 function tintBox() {
   const w = Font.width('MY SPACE DRIFT', 2);
   const x = Math.round(LW / 2 - w / 2);
-  const right = Math.min(x + w, LW - 2 * T - 10);
+  const right = Math.min(x + w, muteIcon().x - 6);   // el boton de sonido manda, se mueva donde se mueva
   return cssBox(x, 0, Math.max(8, right - x), 3 * T, 'TINT');
 }
 
