@@ -7,6 +7,7 @@ Juego web (PWA) jugable desde el navegador.
 - `index.html` — juego completo (canvas + JS)
 - `sw.js` — service worker, cache-first (funciona offline tras la primera carga)
 - `manifest.webmanifest` — instalable como app
+- `icon-*.png` — iconos de la app, generados por `tools/make-icons.py`
 - `.nojekyll` — evita que GitHub Pages procese el sitio con Jekyll
 
 ## Controles
@@ -78,6 +79,20 @@ con el móvil también pide internet cada vez: sin él la pantalla muestra
 
 Todo el juego vive en `index.html` (un solo archivo). Al cambiarlo, subir el
 número de `CACHE` en `sw.js` para que el service worker sirva la versión nueva.
+
+### Iconos
+
+Los iconos no se editan a mano: se rasterizan desde la misma geometría de la
+nave y la misma paleta de cuatro tonos que usa el juego, así que se regeneran
+solos cuando cambia cualquiera de las dos.
+
+```sh
+pip install pillow
+python3 tools/make-icons.py
+```
+
+El tinte del vidrio no entra: el icono es siempre MONO, que es como arranca
+el juego.
 
 ### Comprobaciones
 
