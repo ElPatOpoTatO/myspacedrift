@@ -46,9 +46,13 @@ partidas.
 
 Escondido en el menú: cuatro toques seguidos sobre el título "MY SPACE DRIFT"
 cambian el tinte del vidrio y el nombre del elegido aparece un segundo bajo la
-raya. En escritorio hace lo mismo la tecla `T`. Los toques sueltos no suenan ni
-hacen nada, y si tardan más de dos segundos entre uno y otro la cuenta vuelve a
-cero, así que no se destapa sin querer.
+raya. En escritorio hace lo mismo la tecla `T`, y desde el mando sirve la franja
+de arriba al centro, que es donde cae el título en la tele. Los toques sueltos
+no suenan ni hacen nada, y si tardan más de tres segundos entre uno y otro la
+cuenta vuelve a cero, así que no se destapa sin querer.
+
+Si el menú está en modo demo, el toque que corta la demo también cuenta: son
+cuatro toques siempre, esté la demo puesta o no.
 
 El ciclo pasa por MONO (el blanco y negro de siempre), GREEN, AMBER, RED,
 MAGENTA, VIOLET, BLUE y CYAN. No son paletas distintas: la escena se cuantiza

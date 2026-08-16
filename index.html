@@ -100,7 +100,8 @@ const CFG = {
   ],
   tintSat:       0.62,           // 0 = filtro incoloro, 1 = hue puro (los oscuros se irian a negro de color)
   tintTaps:      4,              // toques seguidos en el titulo para destapar el easter egg
-  tintTapWindow: 2.0,            // s entre toque y toque: mas lento y la cuenta vuelve a cero
+  tintTapWindow: 3.0,            // s entre toque y toque: mas lento y la cuenta vuelve a cero
+                                 // (picar cuatro veces apuntando a un titulo en una tele no es rapido)
   tintOsdTime:   1.4,            // s que el nombre del tinte queda en el menu
 
   // --- nave (§3) ---
@@ -1989,7 +1990,13 @@ function frame(now) {
       Input.lastTouch = now;
       // el boton de sonido gana al toque que corta la demo
       if (G.attract) {
-        if (!handleHudTap(tap)) { G.attract = false; Sfx.quiet = false; G.ship = null; G.meteors.length = 0; G.bullets.length = 0; G.pickups.length = 0; G.shards.length = 0; G.rings.length = 0; Sfx.engine(false); }
+        if (!handleHudTap(tap)) {
+          // ...y el titulo tambien: el toque corta la demo Y cuenta para el
+          // tinte (§21.1). Si no contara, con la demo puesta harian falta
+          // cinco toques en vez de cuatro y el easter egg no saldria nunca.
+          if (hit(tintBox(), tap) && Tint.tap()) { Sfx.init(); Sfx.resume(); Sfx.level(); buzz(20); }
+          G.attract = false; Sfx.quiet = false; G.ship = null; G.meteors.length = 0; G.bullets.length = 0; G.pickups.length = 0; G.shards.length = 0; G.rings.length = 0; Sfx.engine(false);
+        }
       } else handleMenuTap(tap);
     } else if (screen === SCREEN.SCORES || screen === SCREEN.DEAD) {
       handleMenuTap(tap);
