@@ -127,6 +127,19 @@ const CFG = {
   shipMaxSpeed:  212,            // -10%
   shipRadius:    11,             // radio de colision
 
+  // --- entrada de la nave ---
+  // Cada partida empieza con la nave llegando de fuera de la pantalla, quieta
+  // y girada al azar. La trae el autopiloto con los mismos motores del jugador.
+  entryPad:      18,             // px fuera del borde donde nace: entra desde afuera
+  entrySpread:   0.70,           // rad — desviacion aleatoria del rumbo inicial hacia el centro
+                                 // (mas abierto y la nave se arrastra por fuera del borde antes de entrar:
+                                 //  la partida arrancaria con la pantalla sin nave)
+  entryArrive:   100,            // px del centro a los que se da por llegada y el mando pasa al jugador
+                                 // (con avance constante la nave no puede clavarse en el punto exacto:
+                                 //  pasa cerca y sigue, asi que la llegada es un radio, no un punto)
+  entryGrace:    1.2,            // s de gracia con los que arranca el jugador tras la llegada
+  entryMax:      5.0,            // s — red de seguridad por si el autopiloto no llegara
+
   // --- disparo (§7) ---
   maxBullets:    4,
   fireInterval:  0.17,           // s — cadencia fija: picotear no dispara mas
@@ -1027,6 +1040,7 @@ const G = {
   time: 0, spawnTimer: 0, refill: 0,
   flash: 0, levelBanner: 0, timeScale: 1,
   deathTimer: 0, attract: false,
+  entry: false, entryT: 0,          // la nave todavia esta llegando: manda el autopiloto
   buttons: [],
 };
 
@@ -1037,9 +1051,9 @@ function rotTau() {
   return CFG.rotInertia * (-1 / Math.log(1 - CFG.shipFriction));
 }
 
-function newShip(x, y) {
+function newShip(x, y, a) {
   return {
-    x, y, vx: 0, vy: 0, a: -Math.PI / 2, av: 0, av: 0,
+    x, y, vx: 0, vy: 0, a: a === undefined ? -Math.PI / 2 : a, av: 0,
     lives: CFG.lives, damaged: false,
     invuln: 0, grace: 0, cd: 0, alive: true,
     left: false, right: false
@@ -1084,7 +1098,10 @@ function addScore(n) {
 /* ============================ meteoros ============================ */
 function spawnMeteor() {
   const c = curve();
-  const s = G.ship;
+  // Mientras la nave llega no es blanco: nada la apunta ni la predice, y el
+  // campo se llena solo con rocas al azar. Encarar a una nave que el jugador
+  // todavia no maneja seria regalarle una emboscada montada.
+  const s = G.entry ? null : G.ship;
   for (let attempt = 0; attempt < 12; attempt++) {
     const radius = rnd(c.sizeMin, Math.max(c.sizeMin + 4, c.sizeMax));
     // nacen FUERA de pantalla, pegados a un borde (§6)
@@ -1183,17 +1200,58 @@ function startGame(attract) {
   G.flash = 0; G.levelBanner = 0; G.timeScale = 1; G.deathTimer = 0;
   G.attract = !!attract;
   Sfx.quiet = G.attract;            // la demo del menu se ve, pero no se oye ni vibra
-  G.ship = newShip(W / 2, H / 2);
-  G.ship.vx = Math.cos(G.ship.a) * CFG.shipMaxSpeed * 0.7;
-  G.ship.vy = Math.sin(G.ship.a) * CFG.shipMaxSpeed * 0.7;
-  G.ship.grace = 1.2;
+  // La partida no empieza con la nave puesta en el centro: empieza con la nave
+  // llegando. Nace quieta, fuera de la pantalla, pegada a un borde al azar y con
+  // el morro girado al azar, y entra manejando con los mismos motores, la misma
+  // inercia y la misma deriva que va a tener el jugador. Hasta que llega
+  // al centro no hay control, ni disparo, ni puntaje, ni choques.
+  const e = entryStart();
+  G.ship = newShip(e.x, e.y, e.a);
+  G.entry = true; G.entryT = 0;
   if (!attract) screen = SCREEN.PLAY;
+}
+
+// Punto y rumbo de entrada: un borde al azar y el morro apuntando adentro con
+// una desviacion aleatoria. Esa desviacion es lo que hace que cada entrada sea
+// una curva distinta —la nave tiene que corregir el rumbo mientras acelera—
+// en vez de la misma recta al centro todas las partidas.
+function entryStart() {
+  const pad = CFG.entryPad;
+  const edge = rndInt(0, 3);
+  let x, y;
+  if (edge === 0)      { x = rnd(0, W); y = -pad; }
+  else if (edge === 1) { x = W + pad;   y = rnd(0, H); }
+  else if (edge === 2) { x = rnd(0, W); y = H + pad; }
+  else                 { x = -pad;      y = rnd(0, H); }
+  const a = Math.atan2(H / 2 - y, W / 2 - x) + rnd(-CFG.entrySpread, CFG.entrySpread);
+  return { x, y, a };
+}
+
+// Autopiloto de entrada: encara al centro con los mismos motores que el jugador
+// y en el ultimo tramo frena con los dos, para no soltarle la nave lanzada a
+// fondo justo cuando le toca tomar el mando.
+function entryControl(s) {
+  const dx = W / 2 - s.x, dy = H / 2 - s.y;
+  return steerTo(s, Math.atan2(dy, dx), Math.hypot(dx, dy) < CFG.entryArrive * 2);
+}
+
+// La entrada termina al pisar el centro; el tope de tiempo es solo red de
+// seguridad. Ahi empieza la partida de verdad: el mando pasa al jugador, la
+// nave vuelve a envolverse por los bordes y corre la gracia de siempre.
+function updateEntry(s, dt) {
+  G.entryT += dt;
+  const d = Math.hypot(W / 2 - s.x, H / 2 - s.y);
+  if (d > CFG.entryArrive && G.entryT < CFG.entryMax) return;
+  G.entry = false;
+  s.x = (s.x % W + W) % W; s.y = (s.y % H + H) % H;
+  s.grace = CFG.entryGrace;
 }
 
 function shipCopies(s) {
   // Solo la nave se envuelve. Mientras cruza se dibuja partida en ambos bordes,
   // y en las cuatro esquinas si toca dos (§5).
   const out = [{ x: s.x, y: s.y }];
+  if (G.entry) return out;          // llegando esta fuera del campo: no hay borde que cruzar
   const m = CFG.shipLen;
   const dxs = s.x < m ? [W] : s.x > W - m ? [-W] : [];
   const dys = s.y < m ? [H] : s.y > H - m ? [-H] : [];
@@ -1207,9 +1265,16 @@ function updatePlay(dt) {
   const s = G.ship;
   G.time += dt;
 
+  // ---- llegada ----
+  // Se resuelve antes que nada: asi ningun frame sale mitad entrada y mitad
+  // partida (el ultimo empujon del autopiloto disparando por el jugador, medio
+  // frame de goteo de puntaje regalado).
+  if (G.entry) updateEntry(s, dt);
+
   // ---- control ----
   let L, R;
-  if (G.attract) { const b = botControl(s); L = b.left; R = b.right; }
+  if (G.entry) { const e = entryControl(s); L = e.left; R = e.right; }   // llegando: manda el autopiloto
+  else if (G.attract) { const b = botControl(s); L = b.left; R = b.right; }
   else { L = Input.left; R = Input.right; }
   if (!s.alive) { L = false; R = false; }
   s.left = L; s.right = R;
@@ -1243,11 +1308,13 @@ function updatePlay(dt) {
   }
   if (sp > maxSp) { s.vx = s.vx / sp * maxSp; s.vy = s.vy / sp * maxSp; }
   s.x += s.vx * dt; s.y += s.vy * dt;
-  s.x = (s.x % W + W) % W; s.y = (s.y % H + H) % H;
+  // Mientras llega esta fuera del campo a proposito: envolverla ahi la sacaria
+  // por el borde contrario en vez de dejarla entrar (§5).
+  if (!G.entry) { s.x = (s.x % W + W) % W; s.y = (s.y % H + H) % H; }
 
   // ---- disparo: cualquier motor encendido dispara (§7) ----
   s.cd -= dt;
-  if ((L || R) && s.alive && s.cd <= 0 && G.bullets.length < CFG.maxBullets) {
+  if ((L || R) && s.alive && !G.entry && s.cd <= 0 && G.bullets.length < CFG.maxBullets) {
     s.cd = CFG.fireInterval;
     const nose = CFG.shipLen / 2;
     const bvx = s.vx + Math.cos(s.a) * CFG.bulletSpeed;
@@ -1274,7 +1341,8 @@ function updatePlay(dt) {
   if (s.grace > 0) s.grace -= dt;
 
   // ---- goteo por tiempo (§10) ----
-  addScore(CFG.timeDrip * (1 + G.level * 0.14) * dt);
+  // La entrada no paga: el reloj corre cuando el jugador ya maneja.
+  if (!G.entry) addScore(CFG.timeDrip * (1 + G.level * 0.14) * dt);
 
   // ---- spawn ----
   const c = curve();
@@ -1320,7 +1388,7 @@ function updatePlay(dt) {
     const p = G.pickups[i];
     p.x += p.vx * dt; p.y += p.vy * dt; p.t += dt;
     if (p.x < -40 || p.x > W + 40 || p.y < -40 || p.y > H + 40) { G.pickups.splice(i, 1); continue; }
-    if (s.alive) {
+    if (s.alive && !G.entry) {
       for (const cpy of shipCopies(s)) {
         if (Math.hypot(p.x - cpy.x, p.y - cpy.y) < p.r + CFG.shipRadius) {
           G.pickups.splice(i, 1);
@@ -1341,7 +1409,8 @@ function updatePlay(dt) {
   }
 
   // ---- colision nave / meteoros ----
-  if (s.alive && s.invuln <= 0 && s.grace <= 0) {
+  // Entrando no choca: seria morir por algo que el jugador no podia esquivar.
+  if (s.alive && !G.entry && s.invuln <= 0 && s.grace <= 0) {
     outer:
     for (const cpy of shipCopies(s)) {
       for (let j = G.meteors.length - 1; j >= 0; j--) {
@@ -1566,10 +1635,17 @@ function botControl(s) {
     want = Math.atan2(H / 2 - s.y, W / 2 - s.x);
     hold = false;
   }
-  // angulo al que va a quedar si suelta ahora: sin esto el bot oscila
+  return steerTo(s, want, hold);
+}
+
+// Girar hacia un rumbo con los motores del jugador, sin nada que el jugador no
+// tenga. Lo usan la demo y la entrada de cada partida. Mira al angulo en que va
+// a quedar el giro si suelta ahora, no al de este instante: sin eso oscila.
+// Ya encarada, 'hold' deja los dos motores puestos, que es el freno.
+function steerTo(s, want, hold) {
   const aEff = s.a + s.av * rotTau();
-  let d = ((want - aEff + Math.PI) % TAU + TAU) % TAU - Math.PI;
-  if (Math.abs(d) < 0.18) return { left: hold, right: hold };
+  const d = ((want - aEff + Math.PI) % TAU + TAU) % TAU - Math.PI;
+  if (Math.abs(d) < 0.18) return { left: !!hold, right: !!hold };
   return { left: d < 0, right: d > 0 };
 }
 
@@ -2261,7 +2337,7 @@ function handleMenuTap(t) {
 function quitAttract() {
   G.attract = false;
   Sfx.quiet = false;                  // la demo estaba callada; el menu vuelve a sonar
-  G.ship = null;
+  G.ship = null; G.entry = false; G.entryT = 0;
   G.meteors.length = 0; G.bullets.length = 0; G.pickups.length = 0;
   G.shards.length = 0; G.rings.length = 0;
   Sfx.engine(false);

@@ -162,6 +162,7 @@ Fuera del juego, en `dev/` (no se precachean, necesitan `npm i -g playwright`):
 ```sh
 node dev/audio-test.mjs     # renderiza cada sonido a PCM y lo comprueba
 node dev/input-test.mjs     # que ningún control se quede pegado
+node dev/entry-test.mjs     # que la nave entre bien al empezar cada partida
 node dev/layout-test.mjs    # que el juego ocupe exactamente la pantalla visible
 npx http-server -p 8080     # y abre /dev/audio-lab.html para escuchar los sonidos
 ```
