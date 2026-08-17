@@ -71,6 +71,18 @@ El elegido se guarda junto con el silencio, así que el vidrio sigue puesto al
 volver a abrir el juego. La lista y la fuerza del filtro salen de `CFG.tints` y
 `CFG.tintSat`; agregar un hue es agregar una línea.
 
+## Cuadros por segundo
+
+El juego se presenta al ritmo del hardware original: 4194304/70224 = 59,7275
+pantallas por segundo. Sin ese tope, un móvil de 120 o 144 Hz lo dibuja "de
+más" y se ve como un vídeo suave en vez de como la maquinita.
+
+El reparto lo hace el propio panel: a 60, 120 o 240 Hz sale clavado en 60; en
+uno que no sea múltiplo (144) cae en el divisor más cercano, que se ve mejor
+que clavar 59,7275 a costa de tironear. El reloj del juego sigue siendo el de
+verdad, así que el tope cambia cómo se ve, no a qué velocidad va la nave.
+Se desactiva poniendo `CFG.gbHz` en 0.
+
 ## Instalar
 
 Abrir el enlace en el móvil y usar "Añadir a pantalla de inicio". Tras la
