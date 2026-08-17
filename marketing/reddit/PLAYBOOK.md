@@ -121,10 +121,10 @@ Ask for the browser and whether the screen was in landscape. The game locks to l
 rotate prompt, which people sometimes read as a freeze.
 
 **"I can't read the pairing URL."**
-This used to be real — the line was 281 LCD dots wide and a 16:9 screen is only 256 across, so it
-was clipped at both ends on every normal TV and laptop. It's fixed: the address now wraps onto two
-lines when it doesn't fit, and `dev/layout-test.mjs` checks it at five screen shapes. If someone
-still reports it, ask for their screen size, because that would be a new case.
+This used to be real — the line was 281 LCD dots wide and the screen caps out narrower than that, so
+it was clipped at both ends on every normal TV and laptop. It's fixed: the address wraps onto two
+lines when it doesn't fit, and `dev/layout-test.mjs` checks it at six screen shapes up to 2560×1080.
+If someone still reports it, ask for their screen size, because that would be a new case.
 
 **Do not** reply to a suggestion with a promise to implement it. "That's a small change, I'll try
 it" is honest. "I'll add that" isn't, until it's added.

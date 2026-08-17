@@ -30,10 +30,17 @@ El código de la pantalla no cambia al recargar: queda guardado, así que el
 móvil se reconecta solo cuando la tele vuelve.
 
 La dirección se parte en dos renglones cuando no entra de uno. Con el rótulo
-delante mide 281 puntos y un 16:9 da 256 de ancho (144 × 16/9), así que en
-cualquier tele se cortaba justo el renglón que hay que teclear en el móvil. El
-corte va en la primera `/`: el dominio arriba y el resto abajo, que es donde la
-vista ya corta sola. En una pantalla bien ancha sigue saliendo de un renglón.
+delante mide 281 puntos y el LCD no pasa de `CFG.lcdCols`, así que se cortaba
+por los dos lados justo el renglón que hay que teclear en el móvil. El corte va
+en la primera `/`: el dominio arriba y el resto abajo, que es donde la vista ya
+corta sola.
+
+Partirla hace crecer el bloque, y en las pantallas que caen al piso de filas el
+alto no sobra, así que `drawMenu` reparte cediendo por utilidad: primero se cae
+la ayuda de navegación (repite lo que dice la franja de abajo), después el
+tamaño del título (es adorno) y solo al final el del código. La dirección no se
+corta nunca y el código no se saca nunca: sin esos dos no hay con qué emparejar
+el móvil, que es lo único que esa pantalla tiene que resolver.
 
 Ya en el mando, se toca:
 
