@@ -55,6 +55,12 @@ cuenta vuelve a cero, así que no se destapa sin querer.
 Si el menú está en modo demo, el toque que corta la demo también cuenta: son
 cuatro toques siempre, esté la demo puesta o no.
 
+Los cuatro toques son para encontrarlo, no para usarlo: una vez destapado, el
+título queda como un botón normal y basta **un toque** para pasar al siguiente
+vidrio. Y como el tinte sólo se guarda después de haberlo destapado, tener uno
+guardado ya cuenta como encontrado: quien lo descubrió una vez no vuelve a picar
+cuatro veces nunca más, ni siquiera tras cerrar y reabrir el juego.
+
 El ciclo pasa por MONO (el blanco y negro de siempre), GREEN, AMBER, RED,
 MAGENTA, VIOLET, BLUE y CYAN. No son paletas distintas: la escena se cuantiza
 a los mismos cuatro tonos y el color se multiplica al final, en el shader, que
