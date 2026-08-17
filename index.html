@@ -134,9 +134,15 @@ const CFG = {
   entrySpread:   0.70,           // rad — desviacion aleatoria del rumbo inicial hacia el centro
                                  // (mas abierto y la nave se arrastra por fuera del borde antes de entrar:
                                  //  la partida arrancaria con la pantalla sin nave)
-  entryArrive:   100,            // px del centro a los que se da por llegada y el mando pasa al jugador
-                                 // (con avance constante la nave no puede clavarse en el punto exacto:
-                                 //  pasa cerca y sigue, asi que la llegada es un radio, no un punto)
+  entryAim:      10,             // px de error de punteria admitidos: la zona muerta del giro es
+                                 // este error dividido por lo que falta, asi que la punteria se
+                                 // afina sola a medida que se acerca
+  entryLead:     1.6,            // cuanto adelanta el morro para corregir la deriva: lo que decide
+                                 // donde pasa no es hacia donde mira, es hacia donde va
+  entryBrake:    120,            // px del centro a los que frena con los dos motores y entra recta.
+                                 // Frenar de 212 al piso (150 px/s^2) come justo esta distancia:
+                                 // llega al centro al minimo que permiten las fisicas
+  entryArrive:   14,             // px del centro con los que ya se da por llegada
   entryGrace:    1.2,            // s de gracia con los que arranca el jugador tras la llegada
   entryMax:      5.0,            // s — red de seguridad por si el autopiloto no llegara
 
@@ -1044,7 +1050,7 @@ const G = {
   time: 0, spawnTimer: 0, refill: 0,
   flash: 0, levelBanner: 0, timeScale: 1,
   deathTimer: 0, attract: false, demo: false,
-  entry: false, entryT: 0,          // la nave todavia esta llegando: manda el autopiloto
+  entry: false, entryT: 0, entryD: 0,   // la nave todavia esta llegando: manda el autopiloto
   buttons: [],
 };
 
@@ -1102,10 +1108,7 @@ function addScore(n) {
 /* ============================ meteoros ============================ */
 function spawnMeteor() {
   const c = curve();
-  // Mientras la nave llega no es blanco: nada la apunta ni la predice, y el
-  // campo se llena solo con rocas al azar. Encarar a una nave que el jugador
-  // todavia no maneja seria regalarle una emboscada montada.
-  const s = G.entry ? null : G.ship;
+  const s = G.ship;
   for (let attempt = 0; attempt < 12; attempt++) {
     const radius = rnd(c.sizeMin, Math.max(c.sizeMin + 4, c.sizeMax));
     // nacen FUERA de pantalla, pegados a un borde (§6)
@@ -1207,7 +1210,7 @@ function startGame(mode) {
   G.meteors.length = 0; G.bullets.length = 0; G.pickups.length = 0;
   G.shards.length = 0; G.rings.length = 0;
   G.score = 0; G.level = 1; G.nextLevelAt = CFG.levelBase;
-  G.time = 0; G.spawnTimer = 0; G.refill = 1.6;
+  G.time = 0; G.spawnTimer = 0; G.refill = 0;   // el campo se llena cuando la nave llega, no antes
   G.flash = 0; G.levelBanner = 0; G.timeScale = 1; G.deathTimer = 0;
   G.attract = mode !== 'play';      // en los dos demos vuela la maquina
   G.demo    = mode === 'demo';
@@ -1220,45 +1223,82 @@ function startGame(mode) {
   // entran igual: la demo tiene que ensenar la partida que el jugador va a jugar.
   const e = entryStart();
   G.ship = newShip(e.x, e.y, e.a);
-  G.entry = true; G.entryT = 0;
+  G.entry = true; G.entryT = 0; G.entryD = 0;
   if (mode === 'play') screen = SCREEN.PLAY;
   else if (mode === 'demo') screen = SCREEN.DEMO;
 }
 
-// Punto y rumbo de entrada: un borde al azar y el morro apuntando adentro con
-// una desviacion aleatoria. Esa desviacion es lo que hace que cada entrada sea
-// una curva distinta —la nave tiene que corregir el rumbo mientras acelera—
-// en vez de la misma recta al centro todas las partidas.
+// Punto y rumbo de entrada: un borde al azar —sorteado con peso, ver abajo— y
+// el morro apuntando adentro con una desviacion aleatoria. Esa desviacion es lo
+// que hace que cada entrada sea una curva distinta —la nave tiene que corregir
+// el rumbo mientras acelera— en vez de la misma recta al centro todas las
+// partidas.
 function entryStart() {
   const pad = CFG.entryPad;
-  const edge = rndInt(0, 3);
+  // Los cuatro bordes entran en el sorteo, pero pesan lo inverso de lo que hay
+  // que cruzar desde cada uno: en una tele ancha, venir del costado es medio
+  // campo de viaje y la partida se hace esperar, asi que sale mas seguido por
+  // arriba o por abajo. En una pantalla cuadrada los cuatro pesan casi igual.
+  const wv = 2 / H, wh = 2 / W;
+  let r = Math.random() * (2 * wv + 2 * wh), edge = 3;
+  if ((r -= wv) < 0) edge = 0;
+  else if ((r -= wh) < 0) edge = 1;
+  else if ((r -= wv) < 0) edge = 2;
+  // Y dentro del borde, el punto tira al medio: nacer en una esquina es cruzar
+  // la pantalla en diagonal, que es el viaje mas largo que existe. Sale el borde
+  // entero, pero el medio mas seguido.
+  const along = (Math.random() + Math.random() + Math.random()) / 3;
   let x, y;
-  if (edge === 0)      { x = rnd(0, W); y = -pad; }
-  else if (edge === 1) { x = W + pad;   y = rnd(0, H); }
-  else if (edge === 2) { x = rnd(0, W); y = H + pad; }
-  else                 { x = -pad;      y = rnd(0, H); }
+  if (edge === 0)      { x = along * W; y = -pad; }
+  else if (edge === 1) { x = W + pad;   y = along * H; }
+  else if (edge === 2) { x = along * W; y = H + pad; }
+  else                 { x = -pad;      y = along * H; }
   const a = Math.atan2(H / 2 - y, W / 2 - x) + rnd(-CFG.entrySpread, CFG.entrySpread);
   return { x, y, a };
 }
 
-// Autopiloto de entrada: encara al centro con los mismos motores que el jugador
-// y en el ultimo tramo frena con los dos, para no soltarle la nave lanzada a
-// fondo justo cuando le toca tomar el mando.
+// Autopiloto de entrada, en dos tramos. Frenar y girar son el mismo par de
+// motores —con los dos puestos la nave no gira—, asi que no se puede corregir el
+// rumbo y llegar despacio a la vez: primero se apunta, despues se frena.
+//   lejos  — cruza a fondo, corrigiendo la punteria cada vez mas fino
+//   cerca  — los dos motores: entra recta, frenando hasta el piso
 function entryControl(s) {
   const dx = W / 2 - s.x, dy = H / 2 - s.y;
-  return steerTo(s, Math.atan2(dy, dx), Math.hypot(dx, dy) < CFG.entryArrive * 2);
+  const d = Math.hypot(dx, dy);
+  const bearing = Math.atan2(dy, dx);
+  if (d < CFG.entryBrake) return { left: true, right: true };
+
+  // La nave deriva: el morro y la marcha no coinciden. Apuntar el morro al
+  // centro la haria pasar de largo, asi que se apunta mas alla, tanto como se
+  // desvie la marcha, y es la trayectoria la que queda encarada.
+  let want = bearing;
+  if (Math.hypot(s.vx, s.vy) > 20) {
+    const err = ((bearing - Math.atan2(s.vy, s.vx) + Math.PI) % TAU + TAU) % TAU - Math.PI;
+    want = bearing + clamp(err * CFG.entryLead, -1, 1);
+  }
+  // El error de rumbo se paga multiplicado por lo que falta: a 400 px, medio
+  // grado ya son tres pixeles de desvio. Por eso la tolerancia se cierra sola.
+  return steerTo(s, want, false, clamp(CFG.entryAim / d, 0.02, 0.18));
 }
 
-// La entrada termina al pisar el centro; el tope de tiempo es solo red de
-// seguridad. Ahi empieza la partida de verdad: el mando pasa al jugador, la
-// nave vuelve a envolverse por los bordes y corre la gracia de siempre.
+// La entrada termina en el punto mas cercano al centro. Con avance constante la
+// nave no puede clavarse ahi, asi que la llegada es el instante en que deja de
+// acercarse; el radio y el tope de tiempo son solo redes de seguridad. Ahi
+// empieza la partida: el mando pasa al jugador, la nave vuelve a envolverse por
+// los bordes, corre la gracia de siempre y el campo —vacio hasta ahora— se
+// empieza a llenar desde cero, igual que al subir de nivel.
 function updateEntry(s, dt) {
   G.entryT += dt;
   const d = Math.hypot(W / 2 - s.x, H / 2 - s.y);
-  if (d > CFG.entryArrive && G.entryT < CFG.entryMax) return;
+  // Lo de alejarse solo cuenta en el tramo final: recien salida del borde, la
+  // nave se aleja un momento mientras endereza, y eso no es haber llegado.
+  const paso = G.entryD > 0 && d > G.entryD && d < CFG.entryBrake * 2;
+  G.entryD = d;
+  if (d > CFG.entryArrive && !paso && G.entryT < CFG.entryMax) return;
   G.entry = false;
   s.x = (s.x % W + W) % W; s.y = (s.y % H + H) % H;
   s.grace = CFG.entryGrace;
+  G.refill = CFG.refillTime;
 }
 
 function shipCopies(s) {
@@ -1361,19 +1401,23 @@ function updatePlay(dt) {
   if (!G.entry) addScore(CFG.timeDrip * (1 + G.level * 0.14) * dt);
 
   // ---- spawn ----
-  const c = curve();
-  const target = G.refill > 0
-    ? Math.round(c.count * (1 - G.refill / CFG.refillTime))
-    : c.count;
-  if (G.refill > 0) G.refill -= dt;
-  G.spawnTimer -= dt;
-  const live = G.meteors.length;
-  if (G.spawnTimer <= 0 && G.meteors.length < target + 8 && live < target) {
-    // el relleno tras subir de nivel debe tardar segundos, no medio minuto (§11):
-    // el ritmo real lo marca la rampa de 'target', el spawner solo la sigue
-    const deficit = target - live;
-    G.spawnTimer = clamp(0.4 / Math.max(1, deficit), 0.04, 0.4);
-    spawnMeteor();
+  // Mientras la nave llega no hay campo: la entrada es la nave y nada mas, y las
+  // rocas empiezan a entrar recien cuando el jugador tiene el mando.
+  if (!G.entry) {
+    const c = curve();
+    const target = G.refill > 0
+      ? Math.round(c.count * (1 - G.refill / CFG.refillTime))
+      : c.count;
+    if (G.refill > 0) G.refill -= dt;
+    G.spawnTimer -= dt;
+    const live = G.meteors.length;
+    if (G.spawnTimer <= 0 && G.meteors.length < target + 8 && live < target) {
+      // el relleno tras subir de nivel debe tardar segundos, no medio minuto (§11):
+      // el ritmo real lo marca la rampa de 'target', el spawner solo la sigue
+      const deficit = target - live;
+      G.spawnTimer = clamp(0.4 / Math.max(1, deficit), 0.04, 0.4);
+      spawnMeteor();
+    }
   }
 
   // ---- meteoros: linea recta para siempre, sin envolverse (§5,§6) ----
@@ -1658,11 +1702,12 @@ function botControl(s) {
 // Girar hacia un rumbo con los motores del jugador, sin nada que el jugador no
 // tenga. Lo usan la demo y la entrada de cada partida. Mira al angulo en que va
 // a quedar el giro si suelta ahora, no al de este instante: sin eso oscila.
-// Ya encarada, 'hold' deja los dos motores puestos, que es el freno.
-function steerTo(s, want, hold) {
+// Ya encarada, 'hold' deja los dos motores puestos, que es el freno; 'dead' es
+// cuanto se admite de desvio antes de considerarla encarada.
+function steerTo(s, want, hold, dead) {
   const aEff = s.a + s.av * rotTau();
   const d = ((want - aEff + Math.PI) % TAU + TAU) % TAU - Math.PI;
-  if (Math.abs(d) < 0.18) return { left: !!hold, right: !!hold };
+  if (Math.abs(d) < (dead === undefined ? 0.18 : dead)) return { left: !!hold, right: !!hold };
   return { left: d < 0, right: d > 0 };
 }
 
@@ -2439,7 +2484,7 @@ function quitAttract() {
   G.attract = false;
   G.demo = false;
   Sfx.quiet = false;                  // la de fondo estaba callada; el menu vuelve a sonar
-  G.ship = null; G.entry = false; G.entryT = 0;
+  G.ship = null; G.entry = false; G.entryT = 0; G.entryD = 0;
   G.meteors.length = 0; G.bullets.length = 0; G.pickups.length = 0;
   G.shards.length = 0; G.rings.length = 0;
   Sfx.engine(false);
