@@ -30,6 +30,27 @@ Ya en el mando, se toca:
 - Lado derecho — propulsor derecho
 - Ambos lados — freno
 
+## Astillado
+
+Casi siempre una bala revienta la roca entera, pero entre el 5% y el 10% de los
+impactos —la probabilidad sube con la dificultad— la roca solo se astilla: se le
+desprende el **10% de su masa** y el resto sigue volando.
+
+Como la masa va con el cuadrado del radio, la esquirla mide un tercio escaso del
+radio original y la madre queda casi igual de grande. La esquirla sale de lado
+con un desvío al azar de entre 10° y 25°, y ese abanico también se abre con la
+dificultad: al empezar la partida el tope es 17.5° y solo al final de la curva
+llega a los 25°. La madre acusa el golpe hacia el lado contrario con el ángulo
+repartido por masa —pesa nueve veces más, así que se desvía nueve veces menos—.
+
+Astillar paga el 10% de lo que valía la roca; el resto se cobra cuando se la
+termina. Si la esquirla fuese a salir más chica que `CFG.splitMinRadius` no se
+astilla nada: la roca se rompe entera, para no dejar polvo invisible en pantalla.
+
+Las perillas están en `CFG` bajo `--- astillado ---`: `splitChanceMin/Max`,
+`splitMass`, `splitAngMin/Max`, `splitMinRadius` y `splitSpitMin/Max` (lo que la
+esquirla acelera respecto de la roca madre).
+
 ## Records
 
 El top 10 cuelga del código de la pantalla: cada código guarda su propia

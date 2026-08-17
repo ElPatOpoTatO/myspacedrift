@@ -145,6 +145,16 @@ const CFG = {
   objectScale:    0.6,           // -40% al tamano de las rocas
   fairnessTime:   0.5,           // s — guarda de justicia
 
+  // --- astillado (§6) ---
+  splitChanceMin: 0.05,          // al empezar, uno de cada veinte impactos astilla en vez de romper
+  splitChanceMax: 0.10,          // al final de la curva, uno de cada diez
+  splitMass:      0.10,          // fraccion de la masa total que se desprende (el resto sigue volando)
+  splitAngMin:    10,            // grados de desvio de la esquirla: minimo, siempre alcanzable
+  splitAngMax:    25,            // grados de desvio maximo, solo con la dificultad al tope
+  splitMinRadius: 2.5,           // px — si la esquirla saliera mas chica que esto, la roca se rompe entera
+  splitSpitMin:   1.10,          // la esquirla sale mas rapida que la roca madre...
+  splitSpitMax:   1.35,          // ...entre estos dos factores
+
   // --- pickup (§8) ---
   dropChance:    0.11,
   pickupScale:   0.6,            // -40% tambien al pickup; perilla aparte por legibilidad
@@ -1006,6 +1016,10 @@ function curve() {
     speed:   1 + t * 0.55,
     aimed:   0.10 + t * 0.35,                 // proporcion de meteoros directos
     predict: 0.03 + t * 0.20,                 // proporcion de predictivos
+    // astillado: la probabilidad sube del 5% al 10% con la curva, y el abanico de la
+    // esquirla se abre con ella — arranca en 10..17.5 grados y termina en 10..25 (§6)
+    split:    CFG.splitChanceMin + t * (CFG.splitChanceMax - CFG.splitChanceMin),
+    splitAng: CFG.splitAngMin + (CFG.splitAngMax - CFG.splitAngMin) * (0.5 + 0.5 * t),
   };
 }
 
@@ -1326,8 +1340,60 @@ function updatePlay(dt) {
   }
 }
 
+// Astillado (§6): de vez en cuando la bala no revienta la roca, le arranca una
+// lasca. No es partirla a la mitad: se desprende solo el 10% de la masa total, y
+// como la masa va con el cuadrado del radio, la esquirla mide sqrt(0.10) del
+// radio (un tercio escaso) y la madre queda en sqrt(0.90) (casi igual de grande).
+// La esquirla sale de lado con un desvio al azar de entre 10 y 25 grados —el tope
+// lo pone la dificultad— y la madre acusa el golpe hacia el otro lado, con un
+// angulo repartido por masa: como pesa nueve veces mas, se desvia nueve veces menos.
+// Devuelve false si la esquirla saldria demasiado chica para verse; ahi el disparo
+// se cobra la roca entera, como siempre.
+function splitMeteor(index) {
+  const m = G.meteors[index];
+  const rFrag = m.r * Math.sqrt(CFG.splitMass);
+  if (rFrag < CFG.splitMinRadius) return false;
+
+  const kRest = Math.sqrt(1 - CFG.splitMass);        // lo que le queda de radio a la madre
+  const c = curve();
+  const side = Math.random() < 0.5 ? 1 : -1;         // por que lado escupe
+  const ang = rnd(CFG.splitAngMin, c.splitAng) * Math.PI / 180 * side;
+  // reparto del momento lateral: m_frag*sin(ang) + m_resto*sin(back) = 0
+  const back = -Math.asin(clamp(CFG.splitMass / (1 - CFG.splitMass) * Math.sin(ang), -1, 1));
+
+  const speed = Math.hypot(m.vx, m.vy);
+  const dir = Math.atan2(m.vy, m.vx);
+  const worth = 80 + 1600 / Math.max(4, m.r);       // lo que valia entera, antes de encoger
+  const dirFrag = dir + ang, dirRest = dir + back;
+  const spit = speed * rnd(CFG.splitSpitMin, CFG.splitSpitMax);
+
+  // la madre encoge sin cambiar de forma: se escala el mismo contorno
+  for (const p of m.pts) { p.x *= kRest; p.y *= kRest; }
+  m.r *= kRest;
+  m.vx = Math.cos(dirRest) * speed;
+  m.vy = Math.sin(dirRest) * speed;
+  m.va = clamp(m.va * 1.3, -CFG.meteorRotMax * 2, CFG.meteorRotMax * 2);
+
+  // la esquirla nace pegada al borde por el que sale, para que no se solape con la madre
+  const gap = m.r + rFrag + 1;
+  G.meteors.push({
+    x: m.x + Math.cos(dirFrag) * gap,
+    y: m.y + Math.sin(dirFrag) * gap,
+    vx: Math.cos(dirFrag) * spit, vy: Math.sin(dirFrag) * spit,
+    a: rnd(0, TAU), va: rnd(-CFG.meteorRotMax, CFG.meteorRotMax) * 2,
+    pts: makeRock(rFrag), r: rFrag
+  });
+
+  // paga solo lo que se le arranco: el 10% de lo que valia la roca entera
+  G.rings.push({ x: m.x, y: m.y, r: m.r, life: 0.28, max: 0.28 });
+  Sfx.destroy(); buzz(10);
+  addScore(Math.round(CFG.splitMass * worth));      // ultimo: puede disparar levelUp y vaciar el campo
+  return true;
+}
+
 function hitMeteor(index) {
-  // Una bala, una roca: se rompe y desaparece. No hay mitades ni divisiones.
+  // Una bala, una roca: se rompe y desaparece. La unica excepcion es el astillado (§6).
+  if (Math.random() < curve().split && splitMeteor(index)) return;
   const m = G.meteors[index];
   G.meteors.splice(index, 1);
   addScore(Math.round(80 + 1600 / Math.max(4, m.r)));   // mas puntos entre mas chica
