@@ -73,6 +73,19 @@ const CFG = {
                                  // Se convierte a tiempo real en VRAM.fade: la estela dura
                                  // los mismos milisegundos vaya el aparato a los cuadros que vaya.
 
+  // --- estrellas del fondo ---
+  // Una estrella es UN punto del LCD, no una figura: dibujada en unidades de
+  // mundo cambiaria de tamano con la pantalla y dejaria de ser una estrella.
+  // El titileo tiene que cruzar escalones de cuantizacion o no se ve nada: con
+  // cuatro tonos y sin trama, media intensidad de mas no existe. El recorrido
+  // starLo..starHi va del nivel 0 al 2 (apagada -> gris oscuro -> gris claro) y
+  // nunca llega al blanco pleno, que es del trazo del juego.
+  starDensity:   420,            // un punto cada tantos pixeles de LCD (mas alto = cielo mas vacio)
+  starPeriodMin: 2.5,            // s del ciclo mas rapido: lento a proposito, es un titileo, no un parpadeo
+  starPeriodMax: 7.0,            // s del mas lento; cada estrella cae en algun punto entre los dos
+  starLo:        0.10,           // intensidad en el valle: por debajo del corte, o sea apagada
+  starHi:        0.55,           // intensidad en la cresta: gris claro, nunca blanco
+
   // --- LCD Game Boy (shader, §21) ---
   // La paleta del hardware son cuatro tonos: blanco, gris claro, gris oscuro y
   // negro. El verde famoso era el tinte del vidrio, no la paleta del juego, asi
@@ -148,11 +161,23 @@ const CFG = {
   entrySpread:   0.70,           // rad — desviacion aleatoria del rumbo inicial hacia el centro
                                  // (mas abierto y la nave se arrastra por fuera del borde antes de entrar:
                                  //  la partida arrancaria con la pantalla sin nave)
-  entryArrive:   100,            // px del centro a los que se da por llegada y el mando pasa al jugador
-                                 // (con avance constante la nave no puede clavarse en el punto exacto:
-                                 //  pasa cerca y sigue, asi que la llegada es un radio, no un punto)
+  entryAim:      10,             // px de error de punteria admitidos: la zona muerta del giro es
+                                 // este error dividido por lo que falta, asi que la punteria se
+                                 // afina sola a medida que se acerca
+  entryLead:     1.6,            // cuanto adelanta el morro para corregir la deriva: lo que decide
+                                 // donde pasa no es hacia donde mira, es hacia donde va
+  entryBrake:    120,            // px del centro a los que frena con los dos motores y entra recta.
+                                 // Frenar de 212 al piso (150 px/s^2) come justo esta distancia:
+                                 // llega al centro al minimo que permiten las fisicas
+  entryArrive:   14,             // px del centro con los que ya se da por llegada
   entryGrace:    1.2,            // s de gracia con los que arranca el jugador tras la llegada
   entryMax:      5.0,            // s — red de seguridad por si el autopiloto no llegara
+  // Mientras la trae el autopiloto la nave no es del jugador, y eso tiene que
+  // verse sin explicarlo: llega en gris y con una escuadra marcando adonde va.
+  entryTone:     0.62,           // 0..1 — el gris claro de la paleta, no el blanco pleno
+  entryMark:     30,             // px — tamano de la escuadra del centro, que se cierra al llegar
+  readyBlink:    0.55,           // s de parpadeo de la nave al pasar el mando al jugador
+  readyHz:       9,              // parpadeos por segundo de ese relevo
 
   // --- disparo (§7) ---
   maxBullets:    4,
@@ -581,6 +606,7 @@ function resize() {
   tctx.setTransform(1, 0, 0, 1, 0, 0);            // la estela se escribe por pixel, sin transform
   tctx.clearRect(0, 0, bw, bh);
   VRAM.resize(bw, bh);
+  Stars.reset(bw, bh);                            // el cielo se sortea de nuevo: cambio el tamano del buffer
   LCD.resize();
 }
 window.addEventListener('resize', resize);
@@ -1065,7 +1091,8 @@ const G = {
   time: 0, spawnTimer: 0, refill: 0,
   flash: 0, levelBanner: 0, timeScale: 1,
   deathTimer: 0, attract: false, demo: false,
-  entry: false, entryT: 0,          // la nave todavia esta llegando: manda el autopiloto
+  entry: false, entryT: 0, entryD: 0,   // la nave todavia esta llegando: manda el autopiloto
+  ready: 0,                             // s de parpadeo del relevo, justo despues de llegar
   buttons: [],
 };
 
@@ -1123,10 +1150,7 @@ function addScore(n) {
 /* ============================ meteoros ============================ */
 function spawnMeteor() {
   const c = curve();
-  // Mientras la nave llega no es blanco: nada la apunta ni la predice, y el
-  // campo se llena solo con rocas al azar. Encarar a una nave que el jugador
-  // todavia no maneja seria regalarle una emboscada montada.
-  const s = G.entry ? null : G.ship;
+  const s = G.ship;
   for (let attempt = 0; attempt < 12; attempt++) {
     const radius = rnd(c.sizeMin, Math.max(c.sizeMin + 4, c.sizeMax));
     // nacen FUERA de pantalla, pegados a un borde (§6)
@@ -1228,7 +1252,7 @@ function startGame(mode) {
   G.meteors.length = 0; G.bullets.length = 0; G.pickups.length = 0;
   G.shards.length = 0; G.rings.length = 0;
   G.score = 0; G.level = 1; G.nextLevelAt = CFG.levelBase;
-  G.time = 0; G.spawnTimer = 0; G.refill = 1.6;
+  G.time = 0; G.spawnTimer = 0; G.refill = 0;   // el campo se llena cuando la nave llega, no antes
   G.flash = 0; G.levelBanner = 0; G.timeScale = 1; G.deathTimer = 0;
   G.attract = mode !== 'play';      // en los dos demos vuela la maquina
   G.demo    = mode === 'demo';
@@ -1241,45 +1265,86 @@ function startGame(mode) {
   // entran igual: la demo tiene que ensenar la partida que el jugador va a jugar.
   const e = entryStart();
   G.ship = newShip(e.x, e.y, e.a);
-  G.entry = true; G.entryT = 0;
+  G.entry = true; G.entryT = 0; G.entryD = 0; G.ready = 0;
   if (mode === 'play') screen = SCREEN.PLAY;
   else if (mode === 'demo') screen = SCREEN.DEMO;
 }
 
-// Punto y rumbo de entrada: un borde al azar y el morro apuntando adentro con
-// una desviacion aleatoria. Esa desviacion es lo que hace que cada entrada sea
-// una curva distinta —la nave tiene que corregir el rumbo mientras acelera—
-// en vez de la misma recta al centro todas las partidas.
+// Punto y rumbo de entrada: un borde al azar —sorteado con peso, ver abajo— y
+// el morro apuntando adentro con una desviacion aleatoria. Esa desviacion es lo
+// que hace que cada entrada sea una curva distinta —la nave tiene que corregir
+// el rumbo mientras acelera— en vez de la misma recta al centro todas las
+// partidas.
 function entryStart() {
   const pad = CFG.entryPad;
-  const edge = rndInt(0, 3);
+  // Los cuatro bordes entran en el sorteo, pero pesan lo inverso de lo que hay
+  // que cruzar desde cada uno: en una tele ancha, venir del costado es medio
+  // campo de viaje y la partida se hace esperar, asi que sale mas seguido por
+  // arriba o por abajo. En una pantalla cuadrada los cuatro pesan casi igual.
+  const wv = 2 / H, wh = 2 / W;
+  let r = Math.random() * (2 * wv + 2 * wh), edge = 3;
+  if ((r -= wv) < 0) edge = 0;
+  else if ((r -= wh) < 0) edge = 1;
+  else if ((r -= wv) < 0) edge = 2;
+  // Y dentro del borde, el punto tira al medio: nacer en una esquina es cruzar
+  // la pantalla en diagonal, que es el viaje mas largo que existe. Sale el borde
+  // entero, pero el medio mas seguido.
+  const along = (Math.random() + Math.random() + Math.random()) / 3;
   let x, y;
-  if (edge === 0)      { x = rnd(0, W); y = -pad; }
-  else if (edge === 1) { x = W + pad;   y = rnd(0, H); }
-  else if (edge === 2) { x = rnd(0, W); y = H + pad; }
-  else                 { x = -pad;      y = rnd(0, H); }
+  if (edge === 0)      { x = along * W; y = -pad; }
+  else if (edge === 1) { x = W + pad;   y = along * H; }
+  else if (edge === 2) { x = along * W; y = H + pad; }
+  else                 { x = -pad;      y = along * H; }
   const a = Math.atan2(H / 2 - y, W / 2 - x) + rnd(-CFG.entrySpread, CFG.entrySpread);
   return { x, y, a };
 }
 
-// Autopiloto de entrada: encara al centro con los mismos motores que el jugador
-// y en el ultimo tramo frena con los dos, para no soltarle la nave lanzada a
-// fondo justo cuando le toca tomar el mando.
+// Autopiloto de entrada, en dos tramos. Frenar y girar son el mismo par de
+// motores —con los dos puestos la nave no gira—, asi que no se puede corregir el
+// rumbo y llegar despacio a la vez: primero se apunta, despues se frena.
+//   lejos  — cruza a fondo, corrigiendo la punteria cada vez mas fino
+//   cerca  — los dos motores: entra recta, frenando hasta el piso
 function entryControl(s) {
   const dx = W / 2 - s.x, dy = H / 2 - s.y;
-  return steerTo(s, Math.atan2(dy, dx), Math.hypot(dx, dy) < CFG.entryArrive * 2);
+  const d = Math.hypot(dx, dy);
+  const bearing = Math.atan2(dy, dx);
+  if (d < CFG.entryBrake) return { left: true, right: true };
+
+  // La nave deriva: el morro y la marcha no coinciden. Apuntar el morro al
+  // centro la haria pasar de largo, asi que se apunta mas alla, tanto como se
+  // desvie la marcha, y es la trayectoria la que queda encarada.
+  let want = bearing;
+  if (Math.hypot(s.vx, s.vy) > 20) {
+    const err = ((bearing - Math.atan2(s.vy, s.vx) + Math.PI) % TAU + TAU) % TAU - Math.PI;
+    want = bearing + clamp(err * CFG.entryLead, -1, 1);
+  }
+  // El error de rumbo se paga multiplicado por lo que falta: a 400 px, medio
+  // grado ya son tres pixeles de desvio. Por eso la tolerancia se cierra sola.
+  return steerTo(s, want, false, clamp(CFG.entryAim / d, 0.02, 0.18));
 }
 
-// La entrada termina al pisar el centro; el tope de tiempo es solo red de
-// seguridad. Ahi empieza la partida de verdad: el mando pasa al jugador, la
-// nave vuelve a envolverse por los bordes y corre la gracia de siempre.
+// La entrada termina en el punto mas cercano al centro. Con avance constante la
+// nave no puede clavarse ahi, asi que la llegada es el instante en que deja de
+// acercarse; el radio y el tope de tiempo son solo redes de seguridad. Ahi
+// empieza la partida: el mando pasa al jugador, la nave vuelve a envolverse por
+// los bordes, corre la gracia de siempre y el campo —vacio hasta ahora— se
+// empieza a llenar desde cero, igual que al subir de nivel.
 function updateEntry(s, dt) {
   G.entryT += dt;
   const d = Math.hypot(W / 2 - s.x, H / 2 - s.y);
-  if (d > CFG.entryArrive && G.entryT < CFG.entryMax) return;
+  // Lo de alejarse solo cuenta en el tramo final: recien salida del borde, la
+  // nave se aleja un momento mientras endereza, y eso no es haber llegado.
+  const paso = G.entryD > 0 && d > G.entryD && d < CFG.entryBrake * 2;
+  G.entryD = d;
+  if (d > CFG.entryArrive && !paso && G.entryT < CFG.entryMax) return;
   G.entry = false;
   s.x = (s.x % W + W) % W; s.y = (s.y % H + H) % H;
   s.grace = CFG.entryGrace;
+  G.refill = CFG.refillTime;
+  // El relevo se anuncia: la nave parpadea y sale un anillo de donde esta. Es
+  // el mismo anillo de los recolectables, que ya significa "algo cambio aca".
+  G.ready = CFG.readyBlink;
+  G.rings.push({ x: s.x, y: s.y, r: 6, life: 0.45, max: 0.45 });
 }
 
 function shipCopies(s) {
@@ -1376,25 +1441,30 @@ function updatePlay(dt) {
 
   if (s.invuln > 0) s.invuln -= dt;
   if (s.grace > 0) s.grace -= dt;
+  if (G.ready > 0) G.ready -= dt;
 
   // ---- goteo por tiempo (§10) ----
   // La entrada no paga: el reloj corre cuando el jugador ya maneja.
   if (!G.entry) addScore(CFG.timeDrip * (1 + G.level * 0.14) * dt);
 
   // ---- spawn ----
-  const c = curve();
-  const target = G.refill > 0
-    ? Math.round(c.count * (1 - G.refill / CFG.refillTime))
-    : c.count;
-  if (G.refill > 0) G.refill -= dt;
-  G.spawnTimer -= dt;
-  const live = G.meteors.length;
-  if (G.spawnTimer <= 0 && G.meteors.length < target + 8 && live < target) {
-    // el relleno tras subir de nivel debe tardar segundos, no medio minuto (§11):
-    // el ritmo real lo marca la rampa de 'target', el spawner solo la sigue
-    const deficit = target - live;
-    G.spawnTimer = clamp(0.4 / Math.max(1, deficit), 0.04, 0.4);
-    spawnMeteor();
+  // Mientras la nave llega no hay campo: la entrada es la nave y nada mas, y las
+  // rocas empiezan a entrar recien cuando el jugador tiene el mando.
+  if (!G.entry) {
+    const c = curve();
+    const target = G.refill > 0
+      ? Math.round(c.count * (1 - G.refill / CFG.refillTime))
+      : c.count;
+    if (G.refill > 0) G.refill -= dt;
+    G.spawnTimer -= dt;
+    const live = G.meteors.length;
+    if (G.spawnTimer <= 0 && G.meteors.length < target + 8 && live < target) {
+      // el relleno tras subir de nivel debe tardar segundos, no medio minuto (§11):
+      // el ritmo real lo marca la rampa de 'target', el spawner solo la sigue
+      const deficit = target - live;
+      G.spawnTimer = clamp(0.4 / Math.max(1, deficit), 0.04, 0.4);
+      spawnMeteor();
+    }
   }
 
   // ---- meteoros: linea recta para siempre, sin envolverse (§5,§6) ----
@@ -1679,11 +1749,12 @@ function botControl(s) {
 // Girar hacia un rumbo con los motores del jugador, sin nada que el jugador no
 // tenga. Lo usan la demo y la entrada de cada partida. Mira al angulo en que va
 // a quedar el giro si suelta ahora, no al de este instante: sin eso oscila.
-// Ya encarada, 'hold' deja los dos motores puestos, que es el freno.
-function steerTo(s, want, hold) {
+// Ya encarada, 'hold' deja los dos motores puestos, que es el freno; 'dead' es
+// cuanto se admite de desvio antes de considerarla encarada.
+function steerTo(s, want, hold, dead) {
   const aEff = s.a + s.av * rotTau();
   const d = ((want - aEff + Math.PI) % TAU + TAU) % TAU - Math.PI;
-  if (Math.abs(d) < 0.18) return { left: !!hold, right: !!hold };
+  if (Math.abs(d) < (dead === undefined ? 0.18 : dead)) return { left: !!hold, right: !!hold };
   return { left: d < 0, right: d > 0 };
 }
 
@@ -1724,7 +1795,11 @@ const Demo = (() => {
 })();
 
 /* ============================ high scores ============================ */
-let hs = { list: [], initials: [0, 0, 0], slot: 0, pending: null, holdT: 0, holdDir: 0, fromRun: false };
+// 'mine' es la fila de la partida que acaba de terminar: es lo unico que separa
+// tu record de los otros nueve, que son tres letras iguales a las tuyas. Vive
+// solo en memoria y solo hasta la proxima partida, porque marca el renglon de
+// esta vuelta, no una identidad guardada.
+let hs = { list: [], initials: [0, 0, 0], slot: 0, pending: null, holdT: 0, holdDir: 0, fromRun: false, mine: -1 };
 const LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
 
 function endRun() {
@@ -1732,6 +1807,7 @@ function endRun() {
   const entry = { i: 'AAA', s: Math.floor(G.score), l: G.level };
   const qualifies = list.length < CFG.maxScores || entry.s > list[list.length - 1].s;
   hs.pending = qualifies ? entry : null;
+  hs.mine = -1;                             // la fila de la partida anterior ya no es la tuya
   screen = SCREEN.DEAD;
 }
 
@@ -1742,6 +1818,9 @@ async function commitInitials() {
   list.push(e);
   await Store.save(list);                   // ordena por puntaje, nunca por nivel (§12.6), recorta y firma
   hs.list = Store.cached();
+  // La entrada hay que buscarla por valor: al guardar, la tabla se rehace entera
+  // (Store.clean crea objetos nuevos), asi que el que se empujo ya no esta.
+  hs.mine = hs.list.findIndex(x => x.i === e.i && x.s === e.s && x.l === e.l);
   hs.pending = null;
   hs.fromRun = true;
   screen = SCREEN.SCORES;
@@ -1790,6 +1869,9 @@ const VRAM = (() => {
     if (!(size > 1)) { plot(x, y, v); return; }
     for (let dy = 0; dy < size; dy++) for (let dx = 0; dx < size; dx++) plot(x + dx, y + dy, v);
   }
+  // Un punto suelto en px CSS. 'plot' entra en px de LCD, que es lo que usa el
+  // cielo de fondo; el juego mide en px CSS y necesita la conversion.
+  function point(x, y, v) { plot(Math.round(x * PIX), Math.round(y * PIX), v); }
 
   // 'dash' > 0 apaga tramos alternos: es el contorno punteado del escudo.
   function line(ax, ay, bx, by, v, size, dash) {
@@ -1849,7 +1931,43 @@ const VRAM = (() => {
     tctx.putImageData(img, 0, 0);
   }
 
-  return { resize, clear, fade, plot, line, polyAt, circle, blit };
+  return { resize, clear, fade, plot, point, line, polyAt, circle, blit };
+})();
+
+/* ========================= cielo de fondo =========================
+   Un campo de puntos fijos que titilan, detras de todo. Cada estrella es un
+   pixel del LCD y nada mas: se sortean en coordenadas enteras del buffer, no en
+   unidades de mundo, asi que miden lo mismo en cualquier pantalla.
+   El titileo es una sinusoide lenta que recorre starLo..starHi. Lo que se ve no
+   es la sinusoide sino los escalones que cruza al cuantizar (§21): la estrella
+   se apaga, aparece en gris oscuro, sube a gris claro y vuelve. Nunca alcanza el
+   blanco, que es el tono del trazo, y como VRAM.plot mezcla por maximo, dibujar
+   el cielo despues del mundo no puede tapar nada.
+   ==================================================================== */
+const Stars = (() => {
+  let field = [];
+
+  function reset(w, h) {
+    const n = Math.round((w * h) / CFG.starDensity);
+    field = [];
+    for (let i = 0; i < n; i++) {
+      field.push({
+        x: rndInt(0, w - 1),
+        y: rndInt(0, h - 1),
+        per: rnd(CFG.starPeriodMin, CFG.starPeriodMax),
+        ph: rnd(0, TAU),                     // sin esto el cielo entero latiria al unisono
+      });
+    }
+  }
+
+  function draw() {
+    const t = performance.now() / 1000, lo = CFG.starLo, amp = CFG.starHi - lo;
+    for (const s of field) {
+      VRAM.plot(s.x, s.y, lo + amp * (0.5 + 0.5 * Math.sin(t * TAU / s.per + s.ph)));
+    }
+  }
+
+  return { reset, draw };
 })();
 
 function drawShip(s, x, y) {
@@ -1860,6 +1978,12 @@ function drawShip(s, x, y) {
     v = 0.4;                                        // mas apagada mientras dura (§8)
     if (s.invuln < CFG.invulnBlink) v = (Math.sin(s.invuln * 26) > 0) ? 0.7 : 0.34;
   } else if (s.grace > 0 && Math.sin(s.grace * 30) > 0) v = 0.4;
+  // La nave que trae el autopiloto se dibuja en gris: en cuatro tonos, no ser
+  // el blanco pleno es la diferencia que se nota sin tener que explicarla.
+  if (G.entry) v = CFG.entryTone;
+  // Y el relevo se ve: al llegar parpadea entera, apagandose de verdad —no
+  // atenuandose— unas cuantas veces. Es el aviso de que ya responde.
+  if (G.ready > 0) v = Math.sin(G.ready * TAU * CFG.readyHz) > 0 ? 1 : 0;
 
   const dash = shielded ? 2 : 0;                    // contorno punteado del escudo
   SHIP_SEGS.forEach((seg, i) => {
@@ -1898,29 +2022,38 @@ function drawShip(s, x, y) {
 }
 
 function drawPickup(p) {
-  // Ambos son simetricos, huecos y con respiracion (§8). Se distinguen por
-  // silueta y por el sentido de las ondas, nunca por color.
+  // El cuerpo del recolectable mide 2.3 puntos de LCD de radio: una figura de
+  // cinco por cinco. A esa escala un hexagono y un rombo caen sobre los mismos
+  // pixeles, que es por lo que antes no se distinguian. Asi que no se separan
+  // por numero de lados sino por tres ejes a la vez, que a cinco pixeles si
+  // sobreviven, y sin usar color, que en cuatro tonos no existe (§8):
+  //
+  //            escudo                   reparacion
+  //   forma    redonda, dispersa        recta, plena
+  //   giro     orbita                   quieta
+  //   ondas    hacia afuera (irradia)   hacia adentro (absorbe)
+  //
   const breathe = 1 + Math.sin(p.t * 4.2) * 0.16;
   const R = p.r * breathe;
   const repair = p.kind === 'repair';
-  const n = repair ? 4 : 6;                    // rombo vs hexagono
-  const spin = repair ? p.t * 0.35 : p.t * 0.6;
 
-  const ngon = (rad) => {
-    const pts = [];
-    for (let i = 0; i < n; i++) {
-      const a = i * TAU / n;
-      pts.push({ x: Math.cos(a) * rad, y: Math.sin(a) * rad });
-    }
-    VRAM.polyAt(pts, p.x, p.y, spin, true, 1, 1);
-  };
-  ngon(R);
   if (repair) {
-    // cruz interior: la marca de reparacion
-    VRAM.line(p.x - R * 0.45, p.y, p.x + R * 0.45, p.y, 1, 1);
-    VRAM.line(p.x, p.y - R * 0.45, p.x, p.y + R * 0.45, 1, 1);
+    // Cruz gruesa alineada a los ejes: el simbolo de salud de toda la vida, y a
+    // cinco pixeles se lee de una. Va sin girar a proposito — quieta se
+    // distingue mas, y ademas una cruz que gira se convierte en una equis cada
+    // cuarto de vuelta y deja de ser una cruz.
+    VRAM.line(p.x - R, p.y, p.x + R, p.y, 1, 2);
+    VRAM.line(p.x, p.y - R, p.x, p.y + R, 1, 2);
   } else {
-    ngon(R * 0.42);
+    // Nucleo con tres satelites en orbita: redondo, disperso y en movimiento, o
+    // sea lo contrario de la cruz en los tres ejes. La orbita es lo que se ve
+    // primero aunque el nucleo quede en un solo punto.
+    VRAM.point(p.x, p.y, 1);
+    const spin = p.t * 1.1;
+    for (let k = 0; k < 3; k++) {
+      const a = spin + k * TAU / 3;
+      VRAM.point(p.x + Math.cos(a) * R * 1.6, p.y + Math.sin(a) * R * 1.6, 1);
+    }
   }
   for (let k = 0; k < 3; k++) {
     const ph = ((p.t * 0.75) + k / 3) % 1;
@@ -1957,7 +2090,23 @@ function renderWorld(dt) {
   }
   for (const r of G.rings) VRAM.circle(r.x, r.y, r.r, clamp(r.life / r.max, 0, 1) * 0.8);
   const s = G.ship;
+  if (s && G.entry) drawEntryMark(s);
   if (s && s.alive) for (const cpy of shipCopies(s)) drawShip(s, cpy.x, cpy.y);
+}
+
+// La escuadra del centro: las cuatro esquinas del sitio adonde el autopiloto
+// lleva la nave. Se cierra a medida que llega, asi que se ve venir el momento
+// del relevo, y desaparece justo cuando pasa: mientras esta puesta, el mando no
+// es del jugador. Va en gris oscuro, que es el tono de lo que no se toca.
+function drawEntryMark(s) {
+  const cx = W / 2, cy = H / 2;
+  const t = clamp(Math.hypot(cx - s.x, cy - s.y) / (CFG.entryBrake * 2), 0, 1);
+  const r = CFG.entryMark * (0.5 + t * 0.8);
+  const arm = Math.max(3, r * 0.4);
+  for (const ex of [-1, 1]) for (const ey of [-1, 1]) {
+    VRAM.line(cx + ex * r, cy + ey * r, cx + ex * (r - arm), cy + ey * r, 0.42, 1);
+    VRAM.line(cx + ex * r, cy + ey * r, cx + ex * r, cy + ey * (r - arm), 0.42, 1);
+  }
 }
 
 /* ======================= UI: pixel de Game Boy (§22) =======================
@@ -2447,8 +2596,12 @@ function drawScores() {
     const cl = x0 + Math.floor(i / perCol) * (colW + 8);
     const y = top + (i % perCol) * rowH;
     const tone = i < 3 ? 3 : 2;
+    // Tus iniciales laten entre los dos tonos claros: en una tabla de tres letras
+    // por fila es lo unico que dice cual sos. El latido es entre el 3 y el 2, no
+    // entre encendido y apagado, para que se note sin robarle la vista al top 3.
+    const name = i === hs.mine ? (blink(420) ? 3 : 2) : tone;
     text(String(i + 1).padStart(2, ' '), cl, y, 1, 'left', 1);
-    text(e.i, cl + 18, y, 1, 'left', tone);
+    text(e.i, cl + 18, y, 1, 'left', name);
     text(String(e.s).padStart(6, '0'), cl + colW - (two ? 0 : 30), y, 1, 'right', tone);
     if (!two) text('LV ' + e.l, cl + colW, y, 1, 'right', 1);
   }
@@ -2479,7 +2632,8 @@ function activate(label) {
   if (label === 'MUTE') { Sfx.toggleMute(); return true; }
   if (label === 'PLAY') { G.attract = false; startGame('play'); return true; }
   if (label === 'DEMO') { Demo.reset(); startGame('demo'); return true; }
-  if (label === 'HIGH SCORES') { hs.fromRun = false; screen = SCREEN.SCORES; return true; }
+  // Entrando desde el menu no hay partida recien jugada: no hay fila propia que marcar.
+  if (label === 'HIGH SCORES') { hs.fromRun = false; hs.mine = -1; screen = SCREEN.SCORES; return true; }
   if (label === 'BACK') { screen = SCREEN.MENU; Input.lastTouch = performance.now(); return true; }
   if (label === 'PLAY AGAIN') { startGame('play'); return true; }
   if (label === 'MENU') { screen = SCREEN.MENU; Input.lastTouch = performance.now(); return true; }
@@ -2508,7 +2662,7 @@ function quitAttract() {
   G.attract = false;
   G.demo = false;
   Sfx.quiet = false;                  // la de fondo estaba callada; el menu vuelve a sonar
-  G.ship = null; G.entry = false; G.entryT = 0;
+  G.ship = null; G.entry = false; G.entryT = 0; G.entryD = 0; G.ready = 0;
   G.meteors.length = 0; G.bullets.length = 0; G.pickups.length = 0;
   G.shards.length = 0; G.rings.length = 0;
   Sfx.engine(false);
@@ -2606,9 +2760,15 @@ function frame(now) {
   const worldVisible = screen === SCREEN.PLAY || screen === SCREEN.DEMO || (screen === SCREEN.MENU && G.attract);
   if (worldVisible) renderWorld(dt);
   // el campo congelado queda de fondo, apagandose
-  if (screen === SCREEN.DEAD || screen === SCREEN.INITIALS) VRAM.fade(0.05, dt);
+  else if (screen === SCREEN.DEAD || screen === SCREEN.INITIALS) VRAM.fade(0.05, dt);
+  // menu quieto y tabla de records: no hay mundo, solo cielo. Sin este borrado
+  // el buffer repetiria para siempre el ultimo cuadro de la demo.
+  else VRAM.clear();
+  // El cielo va ultimo: VRAM.plot mezcla por maximo, asi que una estrella no
+  // puede pisar un trazo del juego, pero un trazo si tapa una estrella.
+  if (screen !== SCREEN.ROTATE) Stars.draw();
 
-  if (screen !== SCREEN.SCORES && screen !== SCREEN.ROTATE) {
+  if (screen !== SCREEN.ROTATE) {
     // el apagado del modo demo y el destello de nivel/dano se aplican sobre la
     // intensidad, antes de cuantizar: mezclarlos despues inventaria medios tonos
     const dim   = (screen === SCREEN.MENU && G.attract) ? 0.55 : 1;

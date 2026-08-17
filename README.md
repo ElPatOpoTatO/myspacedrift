@@ -57,6 +57,50 @@ Es distinta de la demo de fondo, la que arranca sola tras unos segundos sin
 tocar nada en el menú: esa queda **detrás** de las opciones, apagada y en
 silencio, para no competir con el menú. La elegida es la que enseña.
 
+## Entrada de la nave
+
+Cada partida empieza un momento antes de la partida: la nave **nace quieta,
+fuera de la pantalla**, pegada a un borde al azar y con el morro girado al azar,
+y entra manejando hasta el centro. Cuando llega, el mando pasa al jugador.
+
+No es una animación aparte ni un guion: es la nave volando con las mismas
+físicas de siempre —el mismo empuje de crucero, la misma inercia de giro, la
+misma deriva, el mismo freno— traída por un autopiloto que solo tiene los dos
+propulsores del jugador. El giro al azar es lo que hace que cada entrada sea
+distinta: la nave tiene que corregir el rumbo mientras acelera.
+
+Llega en dos tramos, porque frenar y girar son el mismo par de propulsores y no
+se puede hacer las dos cosas a la vez: **lejos** cruza a fondo, afinando la
+puntería cada vez más fino a medida que se acerca —el error de rumbo se paga
+multiplicado por lo que falta—, y **cerca** (`CFG.entryBrake`) pone los dos
+propulsores y entra recta, frenando. Así llega al centro al mínimo que permiten
+las físicas, que es el piso del freno. La entrada termina en el punto más
+cercano al centro, no en un radio: con avance constante la nave no puede
+clavarse ahí.
+
+**Mientras llega no hay campo**: la pantalla está limpia, no hay puntaje, ni
+disparo, ni choques. Las rocas empiezan a entrar recién cuando el jugador tiene
+el mando, y el campo se llena desde cero con la misma rampa que al subir de
+nivel.
+
+Que el mando todavía no es del jugador se ve, sin que nadie lo explique: la nave
+llega **en gris** —en cuatro tonos, no ser el blanco pleno es diferencia
+suficiente— y en el centro hay una **escuadra** marcando adónde la llevan, que se
+va cerrando a medida que se acerca. Al llegar, la escuadra desaparece, sale un
+anillo de donde está la nave y **la nave parpadea** medio segundo, apagándose de
+verdad y no atenuándose: ese parpadeo es el aviso de que ya responde.
+
+El borde por el que entra se sortea con peso inverso a lo que hay que cruzar
+desde cada uno, y el punto dentro del borde tira al medio: en una tele ancha,
+venir de una esquina del costado es cruzar media pantalla en diagonal y la
+partida se hace esperar. Salen igual los cuatro bordes y el borde entero, solo
+que lo cerca más seguido. La entrada típica dura poco más de dos segundos.
+
+Las perillas están en `CFG` bajo `--- entrada de la nave ---`: `entryPad`,
+`entrySpread`, `entryAim`, `entryLead`, `entryBrake`, `entryArrive`,
+`entryGrace`, `entryMax`, y para lo que se ve, `entryTone`, `entryMark`,
+`readyBlink` y `readyHz`.
+
 ## Partir meteoros
 
 Casi siempre una bala revienta la roca entera, pero entre el 5% y el 10% de los
@@ -100,6 +144,46 @@ Las perillas están en `CFG` bajo `--- particion ---`: `splitChanceMin/Max`,
 `splitDecay`, `splitKeep`, `splitAngMin/Max`, `splitMinRadius`, `splitGap` (el
 aire entre las mitades recién cortadas) y `splitSpinGain/Max`.
 
+## Recolectables
+
+Caen dos, y no se distinguen por color: en cuatro tonos el color no existe. El
+problema real es el tamaño. El cuerpo mide **2,3 puntos de LCD de radio**, o sea
+una figura de cinco por cinco, y a esa escala cualquier par de polígonos cae
+sobre los mismos píxeles. Así que se separan por tres ejes a la vez, que son los
+que sobreviven a cinco píxeles:
+
+|        | escudo                 | reparación             |
+| ------ | ---------------------- | ---------------------- |
+| forma  | redonda y dispersa     | recta y plena          |
+| giro   | orbita                 | quieta                 |
+| ondas  | hacia afuera (irradia) | hacia adentro (absorbe)|
+
+El **escudo** es un núcleo con tres satélites dando vueltas: cuatro puntos
+sueltos que giran. Da seis segundos de invulnerabilidad, y mientras dura la nave
+se ve más apagada y con el contorno punteado.
+
+La **reparación** es una cruz gruesa alineada a los ejes —el símbolo de salud de
+toda la vida— y va sin girar a propósito: quieta se distingue más, y además una
+cruz que gira se convierte en una equis cada cuarto de vuelta y deja de ser una
+cruz. Devuelve la vida perdida y el contorno completo del casco. Sólo cae si hay
+algo que reparar.
+
+## Estrellas del fondo
+
+Detrás de todo hay un campo de puntos que titilan. Cada estrella es **un píxel
+del LCD** y nada más: se sortean en coordenadas enteras del buffer, no en
+unidades de mundo, así que miden lo mismo en cualquier pantalla.
+
+El titileo es una sinusoide lenta, de entre 2,5 y 7 segundos, con fase propia
+para que el cielo no lata al unísono. Lo que se ve no es la sinusoide sino los
+escalones que cruza al cuantizar: la estrella se apaga, aparece en gris oscuro,
+sube a gris claro y vuelve. Nunca llega al blanco pleno, que es el tono del
+trazo del juego, y como el buffer mezcla por máximo una estrella no puede tapar
+una roca ni la nave.
+
+Las perillas están en `CFG`: `starDensity` (un punto cada tantos píxeles de
+pantalla), `starPeriodMin/Max` y `starLo/starHi`.
+
 ## Records
 
 El top 10 cuelga del código de la pantalla: cada código guarda su propia
@@ -112,6 +196,12 @@ Esto frena la edición a mano del almacenamiento, no a quien lea el código
 fuente: el juego es estático y la clave viaja en `index.html`, así que un
 top 10 realmente a prueba de trampas necesitaría un servidor que valide las
 partidas.
+
+Al caer a la tabla después de meter las iniciales, **las tuyas laten**: alternan
+entre los dos tonos claros cada segundo y pico. En una tabla donde las diez filas
+son tres letras, es lo único que dice cuál sos. Late el renglón de la partida que
+acabás de jugar y nada más: entrando a HIGH SCORES desde el menú no hay partida
+reciente, así que no late ninguno.
 
 ## Tinte de la pantalla
 
