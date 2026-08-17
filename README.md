@@ -287,6 +287,7 @@ node dev/input-test.mjs     # que ningún control se quede pegado
 node dev/entry-test.mjs     # que la nave entre bien al empezar cada partida
 node dev/layout-test.mjs    # que el juego ocupe exactamente la pantalla visible
 node dev/demo-test.mjs      # que las dos demos sigan siendo lo que son
+node dev/bot-score.mjs      # cuánto puntúa el bot con dos vidas: la vara de dificultad
 npx http-server -p 8080     # y abre /dev/audio-lab.html para escuchar los sonidos
 ```
 

@@ -25,6 +25,10 @@ This audience wants to click and play. Shortest body of any variant except r/Des
 >
 > https://elpatopotato.github.io/myspacedrift/
 >
+> Post your best score if you get one worth posting — a clip if you can be bothered, a photo of the
+> screen if you can't. The bot that plays the demo screen tops out around 3,556 and averages about
+> 1,500, so there's a number to beat.
+>
 > It's an early build and I'm still deciding what goes in, so if something about it annoys you I'd
 > genuinely like to hear which part.
 

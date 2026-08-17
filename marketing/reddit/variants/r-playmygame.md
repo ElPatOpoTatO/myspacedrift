@@ -43,6 +43,10 @@ Adjust the bracket tag to whatever format the sub is actually using this month.
 > - Should something shoot back, or does adding enemies ruin the two-button idea?
 > - Anything already in there you'd remove?
 >
+> And if you'd rather compete than critique: reply with your best score, with a clip if recording
+> isn't a hassle. The bot that flies the demo screen averages about 1,500 and its best across
+> thirteen runs was 3,556. Runs last about half a minute, so it's a smaller ask than it sounds.
+>
 > It's a single HTML file with all the tuning values in a block at the top, so most suggestions are a
 > small change rather than a rewrite.
 

@@ -62,6 +62,11 @@ Keep whichever you pick inside two lines in a browser. Three is already too long
 > - Should something shoot back, or does that ruin the two-button idea?
 > - Anything in there you'd take out?
 >
+> And if you'd rather compete than critique: reply with your best score. A clip beats a screenshot,
+> mostly because I want to see how you got it. For something to aim at — the machine that plays the
+> DEMO screen averages about 1,500, and its best across thirteen runs was 3,556. Runs are short, so
+> that's a smaller ask than it sounds.
+>
 > It's one HTML file with a config block at the top, so most of this is a small change rather than a
 > rewrite. Tell me what's wrong with it and there's a decent chance it's different by next week.
 
@@ -101,6 +106,16 @@ that would have made the post too long to read.
 > tones and the colour gets multiplied in at the end, in the shader, which is what the console's
 > glass actually did. Once you've found it once, a single tap is enough from then on.
 >
+> **About the scores**
+>
+> There's no server and no global leaderboard — the top ten is stored in your own browser, signed
+> against your pairing code, so it never leaves your device. Which means this thread is the
+> leaderboard. Post a photo of the screen if recording is a hassle; I'm not going to audit anyone.
+>
+> The 3,556 I mentioned is the demo bot's best across thirteen runs under normal rules, two lives
+> and no help. Its median run is about 1,400 and lasts a little over half a minute, so beating it
+> is less work than the number makes it look.
+>
 > **Source**
 >
 > https://github.com/ElPatOpoTatO/myspacedrift — one HTML file, no build step, no dependencies
@@ -120,3 +135,6 @@ that would have made the post too long to read.
 - Everything factual here is checkable in `index.html`: `brakeFloor: 0.5`, `lives: 2`,
   `cruiseThrust: 210` applied every frame, `tintTaps: 4` with `tintTapWindow: 3.0`,
   `gbHz: 4194304/70224`, `gbPalette` with four entries. If you change the game, change this too.
+- The 1,500 / 3,556 in the score challenge come from `dev/bot-score.mjs` — the demo bot playing
+  under normal rules. Re-run it after any difficulty change; quoting a target the game no longer
+  produces is the one factual error here that people will actually catch.

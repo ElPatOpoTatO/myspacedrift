@@ -121,7 +121,40 @@ it" is honest. "I'll add that" isn't, until it's added.
 
 ---
 
-## 6. Afterwards
+## 6. Running the score challenge
+
+The post asks people to reply with their best score, ideally with a clip. That ask does two jobs:
+it gives people a reason to play more than one run, and it gives them a reason to come back to the
+thread — which is what keeps a post alive past its first hour.
+
+It only works if you actually run it:
+
+- **Keep a table in the post itself**, not buried in a comment. Edit the post as entries come in.
+  Three columns is enough: name, score, and whether there's a clip. People check whether they're
+  still on it.
+- **Reply to every entry.** Even one line. An unanswered score post is the last one that person
+  files.
+- **Ask for a clip, accept a photo.** Recording a browser game is more friction than most people
+  will accept, and a photo of the screen still shows the score. Treat the clip as the thing that
+  earns the top of the table, not as the price of entry.
+- **Say what you'd do about an obviously fake score: nothing.** The high-score table is stored
+  locally and signed against the device's pairing code, so there's no server to cheat and nothing
+  to protect. If someone posts a number they didn't earn, they've won a listing on a Reddit table.
+  Arguing about it costs you more than the entry is worth.
+- **Post your own score first**, in the follow-up comment. Nobody wants to be the first entry, and
+  a number in the thread from the start sets the scale.
+
+The subreddits where this takes off are the ones whose audience came to play: r/WebGames,
+r/playmygame, r/IndieGaming, r/alphaandbetausers, and r/Gameboy and r/retrogaming — score-chasing is
+native to those last two. It falls flat in r/gamedev, r/IndieDev and r/DestroyMyGame, where people
+turned up to critique rather than compete, so the variants for those subs leave it out.
+
+The number to quote comes from `dev/bot-score.mjs`, which runs the demo bot under normal rules — two
+lives, no help — and reports the spread. As measured: 13 runs, median 1,433, mean 1,531, best 3,556,
+each run lasting a bit over half a minute. Re-run it if you change the difficulty, because a stale
+target is worse than no target.
+
+## 7. Afterwards
 
 If a suggestion from a thread ships, go back to that thread and say so. It costs one comment, and
 it's the difference between people who commented once and people who come back to see what changed.

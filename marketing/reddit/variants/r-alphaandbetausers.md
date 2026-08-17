@@ -36,6 +36,9 @@ The framing this sub exists for is exactly the true one: early build, needs test
 > phone into the controller. That path has had the least testing of anything in the game, so if it
 > fails for you I'd really like to know what happened.
 >
+> If you want a reason to play more than once: post your best score, with a clip if that's easy. The
+> demo bot averages about 1,500 and its best across thirteen runs was 3,556.
+>
 > Questions I'm stuck on:
 >
 > - Never being able to fully stop — good constraint or just annoying?

@@ -41,6 +41,9 @@ will notice details nobody else does, so the technical honesty is the pitch.
 > https://elpatopotato.github.io/myspacedrift/
 >
 > It's free and unfinished. You play it with two buttons: the engine never stops, so you only steer.
+>
+> It scores like the thing it's imitating, so if you want to make a contest of it, post what you get.
+> The bot that flies the demo screen manages about 1,500 on an average run and 3,556 on its best.
 
 ---
 
