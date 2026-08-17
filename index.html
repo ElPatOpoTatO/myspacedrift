@@ -77,6 +77,10 @@ const CFG = {
   // que un juego nativo se disena en estos cuatro y nada mas.
   gbPalette:     ['#000000', '#545454', '#a8a8a8', '#ffffff'],   // de oscuro a claro
   lcdRows:       144,            // exactamente las filas de la Game Boy
+  // Tope de cuadros: el DMG dibujaba 4194304/70224 = 59.7275 pantallas por
+  // segundo, y ese es el techo. Un movil de 120 o 144 Hz sin tope se ve "de
+  // mas", como video suave, y no como la maquinita. 0 = sin tope (§2.1).
+  gbHz:          4194304 / 70224,
   // El mundo se mide en unidades propias y su ALTO vale siempre baseHeight,
   // pase lo que pase con la pantalla real. Lo unico que cambia con el aparato
   // es cuanto ancho se ve. Sin esto el punto del LCD cambiaria de tamano y la
@@ -128,6 +132,11 @@ const CFG = {
   fireInterval:  0.17,           // s — cadencia fija: picotear no dispara mas
   bulletSpeed:   430,
   bulletLife:    0.55,
+  bulletStreak:  0.016,          // s de velocidad que mide la raya: a mas empuje, raya mas larga
+  bulletSpinMin: 5,              // rad/s — piso de giro, con la nave al minimo (§7.1)
+  bulletSpinMax: 18,             // rad/s — giro a velocidad tope
+  bulletSpinKick: 0.7,           // parte del giro de la nave que se lleva la bala al salir
+  bulletFade:    3.0,            // exponente del apagado: 1 = lineal, mas alto = arranca mas lento
 
   // --- meteoros (§6) ---
   meteorSpeedMin: 55,
@@ -1185,11 +1194,22 @@ function updatePlay(dt) {
   if ((L || R) && s.alive && s.cd <= 0 && G.bullets.length < CFG.maxBullets) {
     s.cd = CFG.fireInterval;
     const nose = CFG.shipLen / 2;
+    const bvx = s.vx + Math.cos(s.a) * CFG.bulletSpeed;
+    const bvy = s.vy + Math.sin(s.a) * CFG.bulletSpeed;
+    // Giro de la bala (§7.1). El piso lo pone la velocidad de la nave: cuanto
+    // mas rapido va el cohete, mas rapido gira lo que suelta, y nunca sale
+    // quieta. Encima puede ganarle el giro propio de la nave, asi que disparar
+    // en plena curva escupe balas mas revueltas que disparar derecho.
+    const spinFloor = CFG.bulletSpinMin +
+      (CFG.bulletSpinMax - CFG.bulletSpinMin) * clamp(sp / maxSp, 0, 1);
+    const spin = Math.max(spinFloor, Math.abs(s.av) * CFG.bulletSpinKick);
     G.bullets.push({
       x: s.x + Math.cos(s.a) * nose, y: s.y + Math.sin(s.a) * nose,
-      vx: s.vx + Math.cos(s.a) * CFG.bulletSpeed,
-      vy: s.vy + Math.sin(s.a) * CFG.bulletSpeed,
-      life: CFG.bulletLife
+      vx: bvx, vy: bvy,
+      a: s.a,                                        // sale alineada con el disparo
+      av: spin * (s.av < 0 ? -1 : 1),                // y gira hacia donde giraba la nave
+      len: Math.hypot(bvx, bvy) * CFG.bulletStreak,  // largo fijo: ya no lo marca la velocidad de vuelo
+      life: CFG.bulletLife, max: CFG.bulletLife
     });
     Sfx.shoot();
   }
@@ -1227,7 +1247,7 @@ function updatePlay(dt) {
   // ---- balas ----
   for (let i = G.bullets.length - 1; i >= 0; i--) {
     const b = G.bullets[i];
-    b.x += b.vx * dt; b.y += b.vy * dt; b.life -= dt;
+    b.x += b.vx * dt; b.y += b.vy * dt; b.a += b.av * dt; b.life -= dt;
     if (b.life <= 0 || b.x < 0 || b.x > W || b.y < 0 || b.y > H) { G.bullets.splice(i, 1); continue; }
     for (let j = G.meteors.length - 1; j >= 0; j--) {
       const m = G.meteors[j];
@@ -1610,7 +1630,18 @@ function renderWorld() {
   VRAM.fade(CFG.trailFade);                    // estela fantasma de LCD (§2)
 
   for (const m of G.meteors) VRAM.polyAt(m.pts, m.x, m.y, m.a, true, 1, 1);
-  for (const b of G.bullets) VRAM.line(b.x, b.y, b.x - b.vx * 0.012, b.y - b.vy * 0.012, 1, 2);
+  // La bala es una raya que tumbea sobre su centro y no se apaga de golpe: se
+  // va encogiendo con una curva que arranca lentisima y se cae al final, como
+  // si se fuera al vacio (§7.1). Todo el efecto es el exponente: k = 1 - t^n.
+  // El tono baja con la misma k, asi que la cuantizacion la lleva de blanco a
+  // gris claro, a gris oscuro y a nada, que son los unicos pasos que hay.
+  for (const b of G.bullets) {
+    const t = clamp(1 - b.life / b.max, 0, 1);
+    const k = 1 - Math.pow(t, CFG.bulletFade);
+    const half = b.len * k * 0.5;
+    const dx = Math.cos(b.a) * half, dy = Math.sin(b.a) * half;
+    VRAM.line(b.x - dx, b.y - dy, b.x + dx, b.y + dy, k, k > 0.5 ? 2 : 1);
+  }
   for (const p of G.pickups) drawPickup(p);
   for (const d of G.shards) {
     const ca = Math.cos(d.a), sa = Math.sin(d.a), v = clamp(d.life / d.max, 0, 1);
@@ -2110,7 +2141,29 @@ let last = performance.now();
 let deadHold = 0;
 let navScreen = null;
 
+// ---- tope de cuadros del DMG (§2.1) ----
+// El navegador llama tan seguido como refresque el panel; aca se deja pasar
+// como mucho un cuadro por periodo de Game Boy y el resto se descarta entero
+// (ni logica ni dibujo: el cuadro no existe). La tolerancia es medio intervalo
+// del panel, medido cuadro a cuadro, y es lo que decide el reparto: una
+// pantalla de 60 Hz (16.667 ms, apenas mas rapida que los 16.743 del DMG)
+// dibuja siempre, sin tironear cada tantos segundos por redondeo, y una de 120
+// deja pasar uno de cada dos. En una que no sea multiplo (144) cae en el
+// divisor mas cercano y queda parejo, que se ve mejor que clavar 59.7275 a
+// costa de tironear. El reloj del juego sigue siendo el de verdad, asi que el
+// tope cambia como se ve, no a que velocidad va la nave.
+const GB_FRAME = CFG.gbHz > 0 ? 1000 / CFG.gbHz : 0;
+let vsync = GB_FRAME || 16.7;          // intervalo del panel: minimo con subida lenta
+let rawLast = last;
+
 function frame(now) {
+  requestAnimationFrame(frame);        // primero: si el cuadro se descarta, el bucle sigue
+
+  const step = now - rawLast;
+  rawLast = now;
+  if (step > 0) vsync = Math.min(step, vsync + 0.2);
+  if (GB_FRAME && now - last < GB_FRAME - vsync * 0.5) return;
+
   let dt = (now - last) / 1000;
   last = now;
   dt = clamp(dt, 0, 0.05);              // sin pausa: si la app pierde foco, se reanuda seco (§14)
@@ -2208,8 +2261,6 @@ function frame(now) {
       handleMenuTap(tap);
     }
   }
-
-  requestAnimationFrame(frame);
 }
 
 /* ==================== enlace TV <-> celular (§20) ====================
@@ -2513,7 +2564,7 @@ Prefs.loadMuted().then(m => { if (m) Sfx.setMuted(true); });
 Prefs.loadTint().then(n => { if (n) Tint.set(n); });      // el vidrio de la ultima vez
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) { Sfx.engine(false); releaseAll(); }
-  last = performance.now();
+  last = rawLast = performance.now();
 });
 window.addEventListener('load', () => Link.start());
 if (!Link.isController) requestAnimationFrame(frame);   // el celular-control no renderiza el juego
