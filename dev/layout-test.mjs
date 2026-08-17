@@ -98,6 +98,35 @@ console.log('\nmargenes seguros (notch)');
         `${still.cssW} vs ${still.W}`);
 }
 
+console.log('\nla direccion de emparejamiento entra en la pantalla');
+{
+  // El fallo: 'PHONE elpatopotato.github.io/myspacedrift/?ctrl' mide 281 puntos
+  // y un 16:9 da 256 de ancho, asi que el renglon que hay que tipear en el
+  // celular salia cortado por los dos lados en cualquier tele. Se mide en las
+  // formas que existen de verdad, no solo en la de este navegador.
+  for (const [w, h] of [[768, 576], [1024, 576], [1920, 1080], [1366, 768], [1280, 576]]) {
+    const p = await (await browser.newContext({ viewport: { width: w, height: h }, hasTouch: true })).newPage();
+    await p.goto(`${base}/index.html`, { waitUntil: 'load' });
+    await p.waitForTimeout(300);
+    const r = await p.evaluate(() => {
+      Link.url = () => 'https://elpatopotato.github.io/myspacedrift/?ctrl';
+      const st = Link.status(); st.code = Link.code(); st.error = '';
+      const url = Link.url().replace(/^https?:\/\//, '').replace(/index\.html\?/, '?');
+      const room = LW - T, cut = url.indexOf('/');
+      const rows = (Font.width('PHONE ' + url, 1) <= room || cut <= 0)
+        ? ['PHONE ' + url] : ['PHONE ' + url.slice(0, cut), url.slice(cut)];
+      return {
+        widest: Math.max(...rows.map(s => Font.width(s, 1))), room,
+        // el codigo va debajo de la direccion y no puede pisar la ayuda de abajo
+        bottom: 12 * T + rows.length * T + 2 * Font.GH, hints: LH() - 2 - Font.GH,
+      };
+    });
+    check(`${w}x${h}: la direccion no se corta`, r.widest <= r.room, `${r.widest} de ${r.room}`);
+    check(`${w}x${h}: el codigo no pisa la ayuda`, r.bottom <= r.hints, `${r.bottom} vs ${r.hints}`);
+    await p.context().close();
+  }
+}
+
 check('la pagina no lanzo errores', errors.length === 0, errors.join(' | '));
 
 await browser.close();

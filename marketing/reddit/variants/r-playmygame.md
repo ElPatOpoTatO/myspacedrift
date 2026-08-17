@@ -1,38 +1,33 @@
 # r/playmygame
 
 **Post type:** link or media post with `media/gameplay.gif`.
-**Flair:** required in most cases — look for a "Feedback Request" / "Web" / "Free" style flair.
+**Flair:** usually required — look for a "Feedback Request" / "Web" / "Free" style flair.
 **Rules:** https://www.reddit.com/r/playmygame/about/rules — read before posting. This sub often has
-a required title format and a reciprocity expectation. Play and comment on a few other people's
-games first, genuinely.
+a required title format and expects you to play and comment on other people's games too. Do that
+first, and mean it.
 
 ---
 
 ## Title
 
-> [Web] My Space Drift — two-button arcade game, free, no install. Early build, looking for honest feedback.
+[Web] Two-button arcade game, unfinished — I'd like to know if the controls are a good idea or a bad one
 
-Adjust the bracket tag to whatever format the sub is actually using this month.
+Adjust the bracket tag to whatever format the sub is using this month.
 
 ---
 
 ## Body
 
-> **Platform:** browser, desktop or phone. Nothing to install, no account.
-> **Price:** free.
-> **State:** early build. It works, it just isn't finished.
+> **Platform:** browser, desktop or phone. Nothing to install.
+> **State:** unfinished. Everything in it works; there's just less of it than there will be.
 >
-> You get a left thruster and a right thruster. There's no accelerator, because the engine never
-> switches off, and no fire button, because any thruster fires. Holding both brakes, but only down
-> to half speed — you can't stop, ever. So aiming and turning and slowing down are all the same two
-> inputs fighting each other, which is the entire game.
+> The bit I'm unsure about is the controls. There's no accelerator, because the engine never
+> switches off, and no fire button, because any thruster fires. You get a left thruster and a right
+> thruster. Holding both slows you down but only to half speed, so you can't stop. That means
+> turning, aiming and slowing are all the same two inputs competing with each other, which is either
+> the whole game or the whole problem and I genuinely can't tell which.
 >
-> Two hits ends the run. There's no lives counter; after the first hit the ship starts losing pieces
-> of its outline and that's your warning.
->
-> Optional: open it on a laptop or TV, and it shows a six-digit code. Open the same page on your
-> phone with `?ctrl` on the end, type the code, and the phone becomes the pad. It's WebRTC, so the
-> two devices don't need to be on the same wifi.
+> Two hits ends a run, and a run lasts about half a minute.
 >
 > https://elpatopotato.github.io/myspacedrift/
 >
@@ -40,15 +35,14 @@ Adjust the bracket tag to whatever format the sub is actually using this month.
 >
 > - Does never being able to fully stop feel like a rule of the game, or like the game fighting you?
 > - Two lives per run — too few?
-> - Should something shoot back, or does adding enemies ruin the two-button idea?
+> - Should something shoot back, or would enemies spoil the two-button idea?
 > - Anything already in there you'd remove?
 >
-> And if you'd rather compete than critique: reply with your best score, with a clip if recording
-> isn't a hassle. The bot that flies the demo screen averages about 1,500 and its best across
-> thirteen runs was 3,556. Runs last about half a minute, so it's a smaller ask than it sounds.
+> If you end up with a score you like, post it — a clip if that's easy. The bot that flies the demo
+> screen averages about 1,500 and its best across thirteen runs was 3,556.
 >
-> It's a single HTML file with all the tuning values in a block at the top, so most suggestions are a
-> small change rather than a rewrite.
+> It's a single HTML file with all the tuning values in a block at the top, so most of this is quick
+> to change.
 
 ---
 

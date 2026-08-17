@@ -2,52 +2,48 @@
 
 **Post type:** media post with `media/gameplay.gif` or `media/shot-play.png`.
 **Rules:** https://www.reddit.com/r/Gameboy/about/rules — read before posting. **Check whether
-original projects are allowed at all**; this sub leans heavily towards hardware and collecting, and
-some threads only permit physical content.
+original projects are allowed at all**; this sub leans towards hardware and collecting, and some
+threads only permit physical content.
 
-The one real risk here is implying this is a Game Boy game. It isn't, it's a web game built to the
-DMG's constraints, and saying so in the first line is what keeps the thread friendly. This crowd
-will notice details nobody else does, so the technical honesty is the pitch.
+The one real risk is implying this is a Game Boy game. It isn't, and saying so in the first line is
+what keeps the thread friendly. This crowd notices details other people don't, which is why it's
+worth asking them specifically.
 
 ---
 
 ## Title
 
-> Not a ROM — a browser game built to the DMG's actual constraints. Four tones, no half-tones, locked to 59.7275 Hz.
+Not a ROM — a browser game I built to the DMG's constraints. Would like to know if I got the details wrong.
 
 ---
 
 ## Body
 
 > Up front so nobody wastes a click: this isn't a Game Boy game and it won't run on hardware. It's a
-> web game I built to the DMG's rules, and the rules turned out to be the interesting part.
+> web game I built to the DMG's rules, and I'd like to know from people who'd notice whether I got
+> them right.
 >
 > The scene isn't drawn with the canvas stroke functions, because antialiasing puts half-tones on
-> every edge and half-tones don't exist on that screen. Everything gets rasterized by hand — Bresenham
-> lines, midpoint circles — into an intensity buffer exactly 144 rows tall, then quantized to four
-> tones. The dot grid goes on afterwards in a shader.
+> every edge and half-tones don't exist on that screen. Everything is rasterized by hand — Bresenham
+> lines, midpoint circles — into a buffer 144 rows tall, then quantized to four tones. The frame rate
+> is capped at 4194304/70224, which is 59.7275 Hz, because without the cap it runs at whatever your
+> phone does and stops looking like a handheld.
 >
-> The frame rate is capped at 4194304/70224, which is 59.7275 Hz. Without the cap it runs at whatever
-> your phone does, and at 120 Hz it stops looking like a handheld and starts looking like video.
+> The tint is a filter rather than a palette: the scene still quantizes to the same four tones and
+> the colour is multiplied in at the end, which is what the glass was doing. The audio is square
+> waves only, nothing below 380 Hz, and the explosions are fast tone jumps down a scale rather than
+> noise, since there's no noise channel to use.
 >
-> The tint is a filter, not a palette. The scene still quantizes to the same four tones and the colour
-> gets multiplied in at the end, which is what the glass was doing. There are eight of them — the
-> green one is the point, the rest are colours no handheld ever shipped with and I put them in anyway.
+> https://elpatopotato.github.io/myspacedrift/ — free, and unfinished.
 >
-> The audio is square waves only, nothing below 380 Hz, rectangular envelopes, no noise channel — the
-> explosions are just fast tone jumps down a pentatonic scale, the way a cheap piezo buzzer would
-> have faked them.
->
-> https://elpatopotato.github.io/myspacedrift/
->
-> It's free and unfinished. You play it with two buttons: the engine never stops, so you only steer.
->
-> It scores like the thing it's imitating, so if you want to make a contest of it, post what you get.
-> The bot that flies the demo screen manages about 1,500 on an average run and 3,556 on its best.
+> You play it with two buttons; the engine never stops, so you only steer. If any of the above is
+> wrong, or if something about it reads as fake to you, I'd rather hear it than not. And if you want
+> to make a contest of it, post what you score — the bot on the demo screen averages about 1,500 and
+> managed 3,556 at best.
 
 ---
 
 ## Follow-up comment
 
-Use the canonical follow-up comment from `../POST.md`, but lead with the easter egg section — the
-tint is the part this sub will care about most.
+Use the canonical follow-up comment from `../POST.md`, but lead with the easter egg — the tint cycle
+is the part this sub will care about most, and the technical explanation is already in the post.

@@ -165,13 +165,8 @@ const browser = await chromium.launch();
 /* --------- 3) las fotos sueltas --------- */
 {
   // El menu va en 16:9 y no en 4:3 como el resto, porque esta pantalla se mira
-  // desde el sillon y esa es la forma que tiene una tele.
-  //
-  // OJO: aun asi la direccion sale cortada, y no es cosa de la captura. El
-  // renglon 'PHONE elpatopotato.github.io/myspacedrift/?ctrl' mide 281 puntos y
-  // un 16:9 da 256 de ancho (144 * 16/9), asi que le faltan 25 en CUALQUIER
-  // tele. Hacen falta 320 —o sea 2.22:1, un ultrapanoramico— para que entre.
-  // La foto lo muestra tal cual: es lo que se ve de verdad.
+  // desde el sillon y esa es la forma que tiene una tele. Ahi la direccion sale
+  // en dos renglones, que es como la va a ver casi todo el mundo.
   const page = await (await browser.newContext({
     viewport: { width: 1024, height: VIEW.height }, hasTouch: true,
   })).newPage();

@@ -7,28 +7,35 @@
 > sub's rules page and read it before you post there.** Rules change, and a removed post costs you
 > that subreddit for weeks.
 
-The game is an unfinished build and the ask is feedback, so the ordering below puts feedback
-communities first and big general audiences last. Small pre-filtered audiences give better answers
-than large unfiltered ones, and better answers are the entire point of this exercise.
+You're asking for feedback, not looking for an audience, and that changes the ordering. The places
+worth posting are the ones where people will actually reply with something useful, which mostly
+means small communities that came to talk about games rather than large ones that came to look at
+them. A thousand upvotes and no comments would be a failed post here.
 
-## Priority order
+The bottom half of this list is mostly reach, and reach isn't what you're after. It's included so
+you know what's there, not as a queue to work through.
 
-| # | Subreddit | Why it fits | Removal risk | Lead with |
+## Order
+
+| # | Subreddit | Why ask them | Removal risk | Open with |
 |---|---|---|---|---|
-| 1 | r/DestroyMyGame | Exists to tear games apart. Exactly the "what would you cut" ask. | Low | The GIF, and an invitation to be harsh |
-| 2 | r/playmygame | Built for "play this and tell me what you think" | Low | Playable link, two-button hook |
-| 3 | r/WebGames | Free browser games, no install, no account. Textbook fit. | Low | It's free and instant |
-| 4 | r/alphaandbetausers | Explicitly for early builds looking for testers | Low | "Early build, want testers" |
-| 5 | r/Gameboy | The four-tone quantization and 59.7275 Hz are the pitch | Medium | Technical authenticity, not the game |
-| 6 | r/IndieDev | Receptive to devlogs and feedback requests | Low | The design constraint, dev to dev |
+| 1 | r/DestroyMyGame | Exists to tear games apart. Exactly the "what would you cut" question. | Low | The clip, and an invitation to be harsh |
+| 2 | r/playmygame | Built for "play this and tell me what you think" | Low | The playable link and the control scheme |
+| 3 | r/WebGames | Browser games, nothing to install. People here will actually play it. | Low | The mechanic, then get out of the way |
+| 4 | r/alphaandbetausers | Explicitly for early builds looking for testers | Low | What state it's in and what you need |
+| 5 | r/Gameboy | Will notice whether the four tones and 59.7275 Hz are right | Medium | That it isn't a ROM, immediately |
+| 6 | r/IndieDev | Will engage with the design question rather than the game | Low | The problem you're stuck on |
 | 7 | r/tinycode | One HTML file, no build step, no dependencies | Low | The single-file angle |
-| 8 | r/SideProject | Solo-project audience, likes finished-ish things shipped | Low | Built it, shipped it, want feedback |
-| 9 | r/IndieGaming | Large and receptive, but noisy | Medium | The GIF, and only the GIF |
-| 10 | r/retrogaming | Loves the DMG detail; hates self-promotion | Medium-high | Hardware accuracy, and be humble |
+| 8 | r/SideProject | Solo-project audience, used to half-finished things | Low | That it isn't done |
+| 9 | r/IndieGaming | Large and receptive, but you'll get reactions more than answers | Medium | The clip |
+| 10 | r/retrogaming | Appreciates the DMG detail; strict about self-promotion | Medium-high | Hardware accuracy, humbly |
 | 11 | r/webdev / r/javascript | Showoff Saturday threads only | High outside the thread | The rasterizer and the WebRTC pairing |
 | 12 | r/gamedev | Self-promo confined to weekly threads | High outside the thread | Feedback Friday only |
 | 13 | r/PWA | Installable, offline, landscape-locked. Small sub. | Low | The PWA plumbing |
 | 14 | r/AndroidGaming, r/iosgaming | Installs from the browser, no store | Medium | No app store, no install |
+
+Realistically the first four are the ones that will give you what you asked for. Everything below
+about #6 is optional.
 
 **Cut from the list:** r/InternetIsBeautiful (huge reach, but heavily moderated and a poor match for
 an unfinished build — worth revisiting when the game is done), r/incremental_games (wrong genre

@@ -2402,8 +2402,23 @@ function drawLinkCode(x, y, s, align) {
   if (!st.code) return;
   // el protocolo y el index.html sobran para tipear a mano en el celular
   const url = Link.url().replace(/^https?:\/\//, '').replace(/index\.html\?/, '?');
-  text('PHONE ' + url, x, y, 1, align, 1);
-  text(st.code, x, y + T, s || 1, align, 2);
+
+  // La direccion no entra de una sola linea en cualquier pantalla. Con el
+  // rotulo delante mide 281 puntos y un 16:9 da 256 de ancho (144 * 16/9), asi
+  // que en CUALQUIER tele se cortaba por los dos lados justo el renglon que hay
+  // que tipear en el celular — el peor sitio posible para que falte texto.
+  // Cuando no entra se parte por el primer '/', que es donde la vista ya corta
+  // sola: el dominio arriba y el resto abajo. En una pantalla bien ancha sigue
+  // saliendo de un renglon, como antes.
+  const room = align === 'center' ? LW - T : align === 'right' ? x - T / 2 : LW - x - T / 2;
+  const cut = url.indexOf('/');
+  const rows = (Font.width('PHONE ' + url, 1) <= room || cut <= 0)
+    ? ['PHONE ' + url]
+    : ['PHONE ' + url.slice(0, cut), url.slice(cut)];
+
+  for (let i = 0; i < rows.length; i++) text(rows[i], x, y + i * Font.GH, 1, align, 1);
+  // el codigo baja lo que ocupe la direccion: con un renglon queda donde estaba
+  text(st.code, x, y + rows.length * T, s || 1, align, 2);
 }
 
 /* ------------------------------- pantallas ------------------------------ */

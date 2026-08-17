@@ -1,7 +1,9 @@
 # How to actually post this
 
-Good copy in a filtered post reaches nobody. This file is the part that decides whether anyone sees
-`POST.md` at all. Work down it in order.
+Mostly this is about not getting silently removed, and about what to do once replies start arriving.
+None of it is about making a post travel further than it deserves to — you're asking people for
+their time and their opinion, and the only thing that earns is being straightforward and then
+sticking around to answer. Work down it in order.
 
 ---
 
@@ -9,10 +11,11 @@ Good copy in a filtered post reaches nobody. This file is the part that decides 
 
 This is the most likely reason a good post disappears, and it has nothing to do with the writing.
 
-Most game subreddits enforce some version of a **10:1 rule** — roughly one self-promotional post for
-every nine posts where you're participating in the community. Several also gate on account age and
+Most game subreddits enforce some version of a **10:1 rule** — roughly one post about your own thing
+for every nine where you're taking part in the community. Several also gate on account age and
 karma, commonly around **a week old and ~20 karma minimum**, and many cap link posts at **one per
-week**.
+week**. Filters can't tell the difference between asking for feedback and advertising, so a
+genuine request gets caught by them just the same.
 
 Before posting anywhere, check:
 
@@ -30,10 +33,11 @@ traffic.
 
 ## 2. Pick the moment
 
-- **Thursday to Saturday, morning.** That's the window that tends to get traction.
-- **Be free for the hour afterwards.** The first hour decides how far a post travels, and the thing
-  that drives it is you replying to every comment as it arrives. If you can't sit with it for an
-  hour, post another day.
+- **Thursday to Saturday, morning.** That's when these subs are busiest.
+- **Be free for the hour afterwards.** This is the one that matters. Almost everyone who's going to
+  reply does so in the first hour, and a question you answer straight away turns into a
+  conversation, while the same question answered a day later turns into nothing. If you can't sit
+  with it for an hour, post another day.
 
 ---
 
@@ -69,8 +73,8 @@ well there.** Match its format. This takes two minutes and is worth more than an
 - `media/demo-cards.gif` — the in-game DEMO cards explaining the controls, with the thruster strip
   lighting up underneath. Use it where the mechanic is hard to grasp from a still — it explains the
   controls better than any paragraph in the post does.
-- `media/shot-menu.png` — the menu with the pairing code, so it's the one that sells the
-  phone-controller idea. Note the clipped URL described below.
+- `media/shot-menu.png` — the menu with the pairing address and code, which is the clearest way to
+  show the phone-as-controller idea without explaining it.
 - `media/shot-play.png`, `media/shot-level.png` — two more gameplay stills.
 - `media/shot-scores.png` — the high-score table (filled with placeholder names by the capture
   script, not real scores).
@@ -108,13 +112,11 @@ add one before posting or answer honestly that you haven't picked one yet.
 Ask for the browser and whether the screen was in landscape. The game locks to landscape and shows a
 rotate prompt, which people sometimes read as a freeze.
 
-**"I can't read the pairing URL / it's cut off."**
-This one is real and worth knowing before you post. The menu line
-`PHONE elpatopotato.github.io/myspacedrift/?ctrl` is 281 LCD dots wide, and a 16:9 screen is only
-256 dots across (144 × 16/9), so it gets clipped at both ends on every normal TV and laptop — it
-needs roughly 2.22:1 to fit. `media/shot-menu.png` shows it exactly as it appears. Since that line
-is how people get their phone connected, it's worth fixing before the post rather than answering
-this in comments.
+**"I can't read the pairing URL."**
+This used to be real — the line was 281 LCD dots wide and a 16:9 screen is only 256 across, so it
+was clipped at both ends on every normal TV and laptop. It's fixed: the address now wraps onto two
+lines when it doesn't fit, and `dev/layout-test.mjs` checks it at five screen shapes. If someone
+still reports it, ask for their screen size, because that would be a new case.
 
 **Do not** reply to a suggestion with a promise to implement it. "That's a small change, I'll try
 it" is honest. "I'll add that" isn't, until it's added.
@@ -123,9 +125,10 @@ it" is honest. "I'll add that" isn't, until it's added.
 
 ## 6. Running the score challenge
 
-The post asks people to reply with their best score, ideally with a clip. That ask does two jobs:
-it gives people a reason to play more than one run, and it gives them a reason to come back to the
-thread — which is what keeps a post alive past its first hour.
+The post asks people to reply with their best score, ideally with a clip. The reason it's worth
+including is that one run tells someone almost nothing about the controls — the whole question you're
+asking is whether the drift becomes something you can work with, and that only happens after a few
+goes. A score to chase is the simplest way to get people to play long enough to have a real opinion.
 
 It only works if you actually run it:
 

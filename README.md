@@ -29,6 +29,12 @@ directa y, si el NAT no la deja pasar, sale por un servidor TURN de relevo.
 El código de la pantalla no cambia al recargar: queda guardado, así que el
 móvil se reconecta solo cuando la tele vuelve.
 
+La dirección se parte en dos renglones cuando no entra de uno. Con el rótulo
+delante mide 281 puntos y un 16:9 da 256 de ancho (144 × 16/9), así que en
+cualquier tele se cortaba justo el renglón que hay que teclear en el móvil. El
+corte va en la primera `/`: el dominio arriba y el resto abajo, que es donde la
+vista ya corta sola. En una pantalla bien ancha sigue saliendo de un renglón.
+
 Ya en el mando, se toca:
 
 - Lado izquierdo — propulsor izquierdo

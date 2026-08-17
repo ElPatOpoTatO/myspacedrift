@@ -5,44 +5,41 @@
 **Rules:** https://www.reddit.com/r/WebGames/about/rules — read before posting. Confirm they allow
 developers to post their own games, and check for any title-tag convention.
 
-This audience wants to click and play. Shortest body of any variant except r/DestroyMyGame.
+This audience wants to click and play, so keep the body short and let them get on with it.
 
 ---
 
 ## Title
 
-> You can't stop. You can only turn. Free browser game, two buttons total.
+You can't stop in this one, only turn. Two buttons, and I'd like to know if that's any fun.
 
 ---
 
 ## Body
 
-> No install, no account, no ads. Works on desktop or phone.
+> I've been building this and I can't tell any more whether the controls are a good idea.
 >
-> The engine is always on. You get a left thruster and a right thruster, and that's the whole
-> control scheme — holding both is a brake, but it only slows you to half speed, so stopping isn't
-> available. Any thruster also fires, which means you aim by turning. Two hits and the run's over.
+> The engine is on the whole time. You get a left thruster and a right thruster, and that's all of
+> it — holding both slows you down but only to half speed, so stopping isn't available. Any thruster
+> also fires, so you aim by turning. Two hits ends a run.
 >
 > https://elpatopotato.github.io/myspacedrift/
 >
-> Post your best score if you get one worth posting — a clip if you can be bothered, a photo of the
-> screen if you can't. The bot that plays the demo screen tops out around 3,556 and averages about
-> 1,500, so there's a number to beat.
->
-> It's an early build and I'm still deciding what goes in, so if something about it annoys you I'd
-> genuinely like to hear which part.
+> It's unfinished and I'm still working out what goes in, so if something about it irritates you I'd
+> like to hear which part. And if you get a score you're pleased with, post it — the bot on the demo
+> screen manages about 1,500 on an average run and 3,556 was its best.
 
 ---
 
 ## Follow-up comment
 
-> Controls: `←` / `→` or `A` / `D`, and `Space` presses both at once for the brake. On a phone it's
-> just left half of the screen and right half. `T` changes the screen tint on desktop.
+> Controls: `←` / `→` or `A` / `D`, and `Space` presses both for the brake. On a phone it's the left
+> half and right half of the screen.
 >
-> If you open it on a laptop or a TV it shows a six-digit code — open the same page on your phone
-> with `?ctrl` on the end, type the code, and your phone becomes the two-button pad. Both devices
-> need internet but not the same wifi.
+> If you open it on a laptop or TV it shows a six-digit code — put `?ctrl` on the end of the same URL
+> on your phone, type the code, and the phone becomes the pad. Both devices need internet but not the
+> same wifi. That part is the least tested thing here, so tell me if it breaks.
 >
-> There's an easter egg too: tap the title on the menu four times, less than three seconds apart.
+> There's an easter egg on the menu too.
 >
 > Source: https://github.com/ElPatOpoTatO/myspacedrift — one HTML file, no build step.
