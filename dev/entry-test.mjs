@@ -16,6 +16,7 @@
  *     el borde contrario en vez de dejarla entrar
  *   - no se queda mucho rato invisible: la partida no puede empezar con la
  *     pantalla sin nave
+ *   - el relevo se avisa: al llegar, la nave parpadea y sale un anillo
  */
 import { serve, playwright, reporter, KNOWN_NOISE } from './harness.mjs';
 
@@ -107,6 +108,36 @@ for (const vp of [{ width: 1280, height: 720 }, { width: 800, height: 600 }, { w
   check('no se envuelve por los bordes', r.envuelta === 0);
   check('no se aleja mas de donde nacio', r.maxOut <= cfg.pad + 12, `${r.maxOut}px fuera`);
   check('no tarda en aparecer', r.maxDark < 1.2, `${r.maxDark}s invisible`);
+  await page.close();
+}
+
+console.log('\nel aviso del relevo');
+{
+  page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
+  page.on('pageerror', e => { if (!KNOWN_NOISE(e)) errors.push(String(e)); });
+  await page.goto(`${base}/index.html`, { waitUntil: 'load' });
+  await page.waitForFunction(() => typeof startGame === 'function');
+  const r = await page.evaluate((STEP) => {
+    const out = { calladoAlEntrar: true, parpadea: true, anillo: true, seApaga: true };
+    for (let n = 0; n < 20; n++) {
+      startGame('play');
+      let t = 0;
+      while (G.entry && t < 12) {
+        updatePlay(STEP); t += STEP;
+        if (G.entry && G.ready > 0) out.calladoAlEntrar = false;   // el aviso es de la llegada
+      }
+      if (!(G.ready > 0)) out.parpadea = false;
+      if (!G.rings.length) out.anillo = false;
+      let u = 0;
+      while (G.ready > 0 && u < 3) { updatePlay(STEP); u += STEP; }
+      if (u > 1) out.seApaga = false;                              // dura un momento, no la partida
+    }
+    return out;
+  }, STEP);
+  check('mientras llega no hay aviso de relevo', r.calladoAlEntrar);
+  check('al llegar la nave parpadea', r.parpadea);
+  check('y sale un anillo de donde esta', r.anillo);
+  check('el parpadeo se apaga solo', r.seApaga);
   await page.close();
 }
 

@@ -145,6 +145,12 @@ const CFG = {
   entryArrive:   14,             // px del centro con los que ya se da por llegada
   entryGrace:    1.2,            // s de gracia con los que arranca el jugador tras la llegada
   entryMax:      5.0,            // s — red de seguridad por si el autopiloto no llegara
+  // Mientras la trae el autopiloto la nave no es del jugador, y eso tiene que
+  // verse sin explicarlo: llega en gris y con una escuadra marcando adonde va.
+  entryTone:     0.62,           // 0..1 — el gris claro de la paleta, no el blanco pleno
+  entryMark:     30,             // px — tamano de la escuadra del centro, que se cierra al llegar
+  readyBlink:    0.55,           // s de parpadeo de la nave al pasar el mando al jugador
+  readyHz:       9,              // parpadeos por segundo de ese relevo
 
   // --- disparo (§7) ---
   maxBullets:    4,
@@ -1051,6 +1057,7 @@ const G = {
   flash: 0, levelBanner: 0, timeScale: 1,
   deathTimer: 0, attract: false, demo: false,
   entry: false, entryT: 0, entryD: 0,   // la nave todavia esta llegando: manda el autopiloto
+  ready: 0,                             // s de parpadeo del relevo, justo despues de llegar
   buttons: [],
 };
 
@@ -1223,7 +1230,7 @@ function startGame(mode) {
   // entran igual: la demo tiene que ensenar la partida que el jugador va a jugar.
   const e = entryStart();
   G.ship = newShip(e.x, e.y, e.a);
-  G.entry = true; G.entryT = 0; G.entryD = 0;
+  G.entry = true; G.entryT = 0; G.entryD = 0; G.ready = 0;
   if (mode === 'play') screen = SCREEN.PLAY;
   else if (mode === 'demo') screen = SCREEN.DEMO;
 }
@@ -1299,6 +1306,10 @@ function updateEntry(s, dt) {
   s.x = (s.x % W + W) % W; s.y = (s.y % H + H) % H;
   s.grace = CFG.entryGrace;
   G.refill = CFG.refillTime;
+  // El relevo se anuncia: la nave parpadea y sale un anillo de donde esta. Es
+  // el mismo anillo de los recolectables, que ya significa "algo cambio aca".
+  G.ready = CFG.readyBlink;
+  G.rings.push({ x: s.x, y: s.y, r: 6, life: 0.45, max: 0.45 });
 }
 
 function shipCopies(s) {
@@ -1395,6 +1406,7 @@ function updatePlay(dt) {
 
   if (s.invuln > 0) s.invuln -= dt;
   if (s.grace > 0) s.grace -= dt;
+  if (G.ready > 0) G.ready -= dt;
 
   // ---- goteo por tiempo (§10) ----
   // La entrada no paga: el reloj corre cuando el jugador ya maneja.
@@ -1873,6 +1885,12 @@ function drawShip(s, x, y) {
     v = 0.4;                                        // mas apagada mientras dura (§8)
     if (s.invuln < CFG.invulnBlink) v = (Math.sin(s.invuln * 26) > 0) ? 0.7 : 0.34;
   } else if (s.grace > 0 && Math.sin(s.grace * 30) > 0) v = 0.4;
+  // La nave que trae el autopiloto se dibuja en gris: en cuatro tonos, no ser
+  // el blanco pleno es la diferencia que se nota sin tener que explicarla.
+  if (G.entry) v = CFG.entryTone;
+  // Y el relevo se ve: al llegar parpadea entera, apagandose de verdad —no
+  // atenuandose— unas cuantas veces. Es el aviso de que ya responde.
+  if (G.ready > 0) v = Math.sin(G.ready * TAU * CFG.readyHz) > 0 ? 1 : 0;
 
   const dash = shielded ? 2 : 0;                    // contorno punteado del escudo
   SHIP_SEGS.forEach((seg, i) => {
@@ -1968,7 +1986,23 @@ function renderWorld() {
   }
   for (const r of G.rings) VRAM.circle(r.x, r.y, r.r, clamp(r.life / r.max, 0, 1) * 0.8);
   const s = G.ship;
+  if (s && G.entry) drawEntryMark(s);
   if (s && s.alive) for (const cpy of shipCopies(s)) drawShip(s, cpy.x, cpy.y);
+}
+
+// La escuadra del centro: las cuatro esquinas del sitio adonde el autopiloto
+// lleva la nave. Se cierra a medida que llega, asi que se ve venir el momento
+// del relevo, y desaparece justo cuando pasa: mientras esta puesta, el mando no
+// es del jugador. Va en gris oscuro, que es el tono de lo que no se toca.
+function drawEntryMark(s) {
+  const cx = W / 2, cy = H / 2;
+  const t = clamp(Math.hypot(cx - s.x, cy - s.y) / (CFG.entryBrake * 2), 0, 1);
+  const r = CFG.entryMark * (0.5 + t * 0.8);
+  const arm = Math.max(3, r * 0.4);
+  for (const ex of [-1, 1]) for (const ey of [-1, 1]) {
+    VRAM.line(cx + ex * r, cy + ey * r, cx + ex * (r - arm), cy + ey * r, 0.42, 1);
+    VRAM.line(cx + ex * r, cy + ey * r, cx + ex * r, cy + ey * (r - arm), 0.42, 1);
+  }
 }
 
 /* ======================= UI: pixel de Game Boy (§22) =======================
@@ -2484,7 +2518,7 @@ function quitAttract() {
   G.attract = false;
   G.demo = false;
   Sfx.quiet = false;                  // la de fondo estaba callada; el menu vuelve a sonar
-  G.ship = null; G.entry = false; G.entryT = 0; G.entryD = 0;
+  G.ship = null; G.entry = false; G.entryT = 0; G.entryD = 0; G.ready = 0;
   G.meteors.length = 0; G.bullets.length = 0; G.pickups.length = 0;
   G.shards.length = 0; G.rings.length = 0;
   Sfx.engine(false);

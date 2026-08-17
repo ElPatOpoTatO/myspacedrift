@@ -83,6 +83,13 @@ disparo, ni choques. Las rocas empiezan a entrar recién cuando el jugador tiene
 el mando, y el campo se llena desde cero con la misma rampa que al subir de
 nivel.
 
+Que el mando todavía no es del jugador se ve, sin que nadie lo explique: la nave
+llega **en gris** —en cuatro tonos, no ser el blanco pleno es diferencia
+suficiente— y en el centro hay una **escuadra** marcando adónde la llevan, que se
+va cerrando a medida que se acerca. Al llegar, la escuadra desaparece, sale un
+anillo de donde está la nave y **la nave parpadea** medio segundo, apagándose de
+verdad y no atenuándose: ese parpadeo es el aviso de que ya responde.
+
 El borde por el que entra se sortea con peso inverso a lo que hay que cruzar
 desde cada uno, y el punto dentro del borde tira al medio: en una tele ancha,
 venir de una esquina del costado es cruzar media pantalla en diagonal y la
@@ -91,7 +98,8 @@ que lo cerca más seguido. La entrada típica dura poco más de dos segundos.
 
 Las perillas están en `CFG` bajo `--- entrada de la nave ---`: `entryPad`,
 `entrySpread`, `entryAim`, `entryLead`, `entryBrake`, `entryArrive`,
-`entryGrace` y `entryMax`.
+`entryGrace`, `entryMax`, y para lo que se ve, `entryTone`, `entryMark`,
+`readyBlink` y `readyHz`.
 
 ## Partir meteoros
 
