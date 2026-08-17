@@ -35,7 +35,7 @@ const sample = () => page.evaluate(({ RUNS, STEP }) => {
   const durs = [], scores = [], dists = [], outs = [], darks = [], starts = [], angles = [];
   let quieta = true, fuera = true, viva = true, envuelta = 0, balas = 0;
   for (let n = 0; n < RUNS; n++) {
-    startGame(false);
+    startGame('play');
     const s = G.ship;
     if (Math.hypot(s.vx, s.vy) !== 0) quieta = false;
     if (s.x >= 0 && s.x <= W && s.y >= 0 && s.y <= H) fuera = false;
@@ -113,7 +113,7 @@ console.log('\nblancos mientras llega');
   const r = await page.evaluate(() => {
     const N = 1500;
     const frac = (entrando) => {
-      startGame(false);
+      startGame('play');
       const s = G.ship;
       G.entry = entrando;
       s.x = W / 2; s.y = H / 2; s.vx = 0; s.vy = 0;   // mismo blanco en los dos casos
@@ -146,14 +146,14 @@ console.log('\ndemo y partidas encadenadas');
   await page.goto(`${base}/index.html`, { waitUntil: 'load' });
   await page.waitForFunction(() => typeof startGame === 'function');
   const r = await page.evaluate((STEP) => {
-    startGame(true);
+    startGame('attract');
     const entraDemo = G.entry === true;
     let t = 0; while (G.entry && t < 12) { updatePlay(STEP); t += STEP; }
     for (let i = 0; i < 600; i++) updatePlay(STEP);      // 10 s de demo, ya con el bot al mando
     const demoSigue = !!G.ship && G.ship.x >= 0 && G.ship.x <= W;
     quitAttract();
     const limpio = G.entry === false && G.ship === null;
-    startGame(false);
+    startGame('play');
     const otraVez = G.entry === true && Math.hypot(G.ship.vx, G.ship.vy) === 0;
     return { entraDemo, demoSigue, limpio, otraVez };
   }, STEP);
