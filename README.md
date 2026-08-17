@@ -30,6 +30,49 @@ Ya en el mando, se toca:
 - Lado derecho — propulsor derecho
 - Ambos lados — freno
 
+## Partir meteoros
+
+Casi siempre una bala revienta la roca entera, pero entre el 5% y el 10% de los
+impactos —la probabilidad sube con la dificultad— la parte en dos por el medio.
+
+El reparto no es 50/50: **cada mitad se queda con el 40% de la masa y el 20% que
+sobra se va en polvo** por la línea del corte. Cada mitad es literalmente la roca
+de antes cortada por la mitad —los mismos vértices, la misma orientación y la
+misma velocidad que traía la madre—; el contorno cortado ronda el 50% del área,
+así que se encoge lo justo para dejarlo en el 40% exacto sin cambiar de forma.
+
+El corte va en la dirección de la marcha, así que las mitades se abren a los
+lados con un ángulo al azar de entre 10° y 25°, simétrico, y ese abanico también
+se abre con la dificultad: al empezar la partida el tope es 17.5° y solo al final
+de la curva llega a los 25°. Como las dos mitades pesan lo mismo y se abren lo
+mismo, el momento lateral se cancela solo.
+
+Partir paga el 20% que se evaporó; el resto se cobra al terminar cada mitad. Si
+las mitades fuesen a salir más chicas que `CFG.splitMinRadius`, no se parte nada:
+la roca se rompe entera, para no dejar polvo invisible en pantalla.
+
+Una mitad se puede volver a partir, pero con **la mitad de probabilidad** que su
+madre (`CFG.splitDecay`), así que la cadena se agota sola: un cuarto de roca ya
+parte con la cuarta parte de probabilidad.
+
+## Giro de las rocas
+
+Al nacer, cada roca gira poco y al azar: `CFG.meteorRotMax` es un giro de
+crucero ligero, lo justo para que la piedra cabecee.
+
+El golpe de la bala es lo que las pone a girar de verdad. Al partirse, cada
+mitad recibe un giro proporcional a **la velocidad de la bala que la partió** —la
+bala hereda la velocidad de la nave, así que disparar en marcha voltea más— y en
+contra de su propio radio, que es como un cascote chico voltea más que uno
+grande. Ese giro se **suma** al que la roca ya traía y sale en sentidos opuestos
+para cada mitad, que es como se abre lo que se parte. `CFG.splitSpinGain` es la
+ganancia y `CFG.splitSpinMax` el tope, para que nada acabe girando como una
+licuadora.
+
+Las perillas están en `CFG` bajo `--- particion ---`: `splitChanceMin/Max`,
+`splitDecay`, `splitKeep`, `splitAngMin/Max`, `splitMinRadius`, `splitGap` (el
+aire entre las mitades recién cortadas) y `splitSpinGain/Max`.
+
 ## Records
 
 El top 10 cuelga del código de la pantalla: cada código guarda su propia

@@ -141,9 +141,21 @@ const CFG = {
   // --- meteoros (§6) ---
   meteorSpeedMin: 55,
   meteorSpeedMax: 135,
-  meteorRotMax:   0.9,
+  meteorRotMax:   0.35,          // rad/s — giro ligero de crucero: la roca cabecea, no gira como un ventilador
   objectScale:    0.6,           // -40% al tamano de las rocas
   fairnessTime:   0.5,           // s — guarda de justicia
+
+  // --- particion (§6) ---
+  splitChanceMin: 0.05,          // al empezar, uno de cada veinte impactos parte en vez de romper
+  splitChanceMax: 0.10,          // al final de la curva, uno de cada diez
+  splitDecay:     0.50,          // cada mitad hereda la mitad de la probabilidad de su madre
+  splitKeep:      0.40,          // masa que se lleva cada mitad: 40 + 40, y el 20% restante se hace polvo
+  splitAngMin:    10,            // grados que se abre cada mitad: minimo, siempre alcanzable
+  splitAngMax:    25,            // grados de apertura maxima, solo con la dificultad al tope
+  splitMinRadius: 3,             // px — si las mitades salieran mas chicas que esto, la roca se rompe entera
+  splitGap:       1.5,           // px de aire entre las dos mitades recien cortadas
+  splitSpinGain:  0.05,          // rad/s de giro por cada px/s de bala y px de radio de la mitad
+  splitSpinMax:   6.0,           // rad/s — tope del giro tras el impacto
 
   // --- pickup (§8) ---
   dropChance:    0.11,
@@ -938,6 +950,45 @@ function makeRock(radius) {
   return pts;
 }
 
+// Area de un contorno cerrado (formula del zapato). Como la masa de una roca es
+// su area, esto es lo que se reparte al partirla.
+function polyArea(pts) {
+  let a = 0;
+  for (let i = 0, j = pts.length - 1; i < pts.length; j = i++)
+    a += pts[j].x * pts[i].y - pts[i].x * pts[j].y;
+  return Math.abs(a) / 2;
+}
+
+// Centro de masa del contorno: es donde queda el eje de giro de cada mitad, que
+// no es el centro de la roca de la que salio.
+function polyCenter(pts) {
+  let a = 0, cx = 0, cy = 0;
+  for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+    const f = pts[j].x * pts[i].y - pts[i].x * pts[j].y;
+    a += f; cx += (pts[j].x + pts[i].x) * f; cy += (pts[j].y + pts[i].y) * f;
+  }
+  if (Math.abs(a) < 1e-9) return { x: 0, y: 0 };
+  return { x: cx / (3 * a), y: cy / (3 * a) };
+}
+
+// Corta un contorno por la recta que pasa por su origen con normal (nx, ny) y
+// devuelve el trozo del lado positivo, cosido por donde el contorno cruza la
+// recta. Llamandola dos veces con la normal al derecho y del reves salen las dos
+// mitades: los mismos vertices de la roca, mas los dos puntos del corte.
+function cutOutline(pts, nx, ny) {
+  const out = [];
+  for (let i = 0; i < pts.length; i++) {
+    const p = pts[i], q = pts[(i + 1) % pts.length];
+    const dp = p.x * nx + p.y * ny, dq = q.x * nx + q.y * ny;
+    if (dp >= 0) out.push({ x: p.x, y: p.y });
+    if ((dp >= 0) !== (dq >= 0)) {                 // el lado cruza: nace un vertice de corte
+      const t = dp / (dp - dq);
+      out.push({ x: p.x + (q.x - p.x) * t, y: p.y + (q.y - p.y) * t });
+    }
+  }
+  return out;
+}
+
 // Contorno de la nave: triangulo alargado con la parte trasera curvada hacia
 // adentro (§3). Se guarda como lista de puntos -> los segmentos son lo que se
 // pierde al danarse y lo que sale despedido al morir.
@@ -1006,6 +1057,10 @@ function curve() {
     speed:   1 + t * 0.55,
     aimed:   0.10 + t * 0.35,                 // proporcion de meteoros directos
     predict: 0.03 + t * 0.20,                 // proporcion de predictivos
+    // particion: la probabilidad sube del 5% al 10% con la curva, y el abanico con
+    // que se abren las mitades tambien — de 10..17.5 grados a 10..25 (§6)
+    split:    CFG.splitChanceMin + t * (CFG.splitChanceMax - CFG.splitChanceMin),
+    splitAng: CFG.splitAngMin + (CFG.splitAngMax - CFG.splitAngMin) * (0.5 + 0.5 * t),
   };
 }
 
@@ -1061,7 +1116,8 @@ function spawnMeteor() {
 
     G.meteors.push({
       x, y, vx, vy, a: rnd(0, TAU), va: rnd(-CFG.meteorRotMax, CFG.meteorRotMax),
-      pts: makeRock(radius), r: radius
+      pts: makeRock(radius), r: radius,
+      splits: 0                                    // veces que ya se partio: baja su probabilidad de partirse (§6)
     });
     return;
   }
@@ -1254,7 +1310,7 @@ function updatePlay(dt) {
       if (Math.hypot(b.x - m.x, b.y - m.y) > m.r) continue;
       if (!pointInRock(b.x, b.y, m)) continue;
       G.bullets.splice(i, 1);
-      hitMeteor(j);
+      hitMeteor(j, b);            // la bala va con ella: su velocidad es la que pone a girar las mitades
       break;
     }
   }
@@ -1326,9 +1382,96 @@ function updatePlay(dt) {
   }
 }
 
-function hitMeteor(index) {
-  // Una bala, una roca: se rompe y desaparece. No hay mitades ni divisiones.
+// Particion (§6): de vez en cuando la bala no revienta la roca, la parte en dos.
+// El corte va en la direccion de la marcha, asi que las mitades se abren a los
+// lados, y no es un 50/50: cada mitad se queda con el 40% de la masa y el 20%
+// que sobra se va en polvo por la linea del corte.
+//
+// Cada mitad es literalmente la roca de antes cortada por el medio: los mismos
+// vertices, la misma orientacion y la misma velocidad que traia la madre —solo
+// cambia la direccion, que se abre entre 10 y 25 grados hacia su lado, con el
+// tope puesto por la dificultad—. El contorno cortado ronda el 50% del area, asi
+// que se encoge lo justo para dejarlo en el 40% exacto sin cambiar de forma.
+//
+// El golpe ademas las pone a girar: el giro va con la velocidad de la bala y en
+// contra del radio de la mitad (un cascote chico voltea mas), se suma al giro que
+// la roca ya traia y sale en sentidos opuestos, que es como se abre lo que se parte.
+//
+// Devuelve false si las mitades saldrian demasiado chicas para verse o si el
+// corte no deja dos trozos limpios; ahi el disparo se cobra la roca entera.
+function splitMeteor(index, bulletSpeed) {
   const m = G.meteors[index];
+  const rHalf = m.r * Math.sqrt(CFG.splitKeep);
+  if (rHalf < CFG.splitMinRadius) return false;
+
+  const speed = Math.hypot(m.vx, m.vy);
+  const dir = speed > 1e-3 ? Math.atan2(m.vy, m.vx) : m.a;
+  const area = polyArea(m.pts);
+  if (area < 1e-6) return false;
+
+  // la recta del corte sigue la marcha; su normal (en coordenadas de la roca) es
+  // la perpendicular, y es por ahi por donde se separan las dos mitades
+  const nl = dir + Math.PI / 2 - m.a;
+  const nx = Math.cos(nl), ny = Math.sin(nl);
+  const halves = [cutOutline(m.pts, nx, ny), cutOutline(m.pts, -nx, -ny)];
+  if (halves.some(h => h.length < 3 || polyArea(h) < area * 0.05)) return false;
+
+  const c = curve();
+  const ang = rnd(CFG.splitAngMin, c.splitAng) * Math.PI / 180;
+  const spin = clamp(CFG.splitSpinGain * bulletSpeed / rHalf, 0, CFG.splitSpinMax);
+  const worth = 80 + 1600 / Math.max(4, m.r);       // lo que valia entera
+  const ca = Math.cos(m.a), sa = Math.sin(m.a);
+  const mx = m.x, my = m.y, mvx = m.vx, mvy = m.vy, ma = m.a, mva = m.va;
+  const splits = (m.splits || 0) + 1;
+  G.meteors.splice(index, 1);
+
+  halves.forEach((pts, i) => {
+    const side = i === 0 ? 1 : -1;                  // 0 = la del lado de la normal
+    const k = Math.sqrt(CFG.splitKeep * area / polyArea(pts));   // del ~50% cortado al 40% exacto
+    const cen = polyCenter(pts);
+    let r = 0;
+    for (const p of pts) {
+      p.x = (p.x - cen.x) * k; p.y = (p.y - cen.y) * k;
+      r = Math.max(r, Math.hypot(p.x, p.y));
+    }
+    const ox = cen.x + nx * CFG.splitGap * side, oy = cen.y + ny * CFG.splitGap * side;
+    const d = dir + ang * side;
+    G.meteors.push({
+      x: mx + ox * ca - oy * sa, y: my + ox * sa + oy * ca,
+      vx: Math.cos(d) * speed, vy: Math.sin(d) * speed,   // la velocidad es la que traia
+      a: ma, va: clamp(mva + spin * side, -CFG.splitSpinMax, CFG.splitSpinMax),
+      pts, r, splits
+    });
+  });
+
+  // el 20% que no se lleva ninguna mitad se va en polvo, a lo largo del corte
+  const dx = Math.cos(dir), dy = Math.sin(dir);
+  for (let i = 0; i < 3; i++) {
+    const t = rnd(-0.5, 0.5) * m.r, len = clamp(m.r * 0.18, 1.2, 4);
+    const sd = Math.random() < 0.5 ? 1 : -1, kick = rnd(20, 60);
+    G.shards.push({
+      x: mx + dx * t, y: my + dy * t,
+      ax: -dx * len, ay: -dy * len, bx: dx * len, by: dy * len,
+      a: 0, va: rnd(-3, 3),
+      vx: mvx - dy * sd * kick, vy: mvy + dx * sd * kick,
+      life: rnd(0.3, 0.6), max: 0.6
+    });
+  }
+
+  G.rings.push({ x: mx, y: my, r: m.r, life: 0.28, max: 0.28 });
+  Sfx.destroy(); buzz(10);
+  addScore(Math.round((1 - 2 * CFG.splitKeep) * worth));  // paga el polvo; las mitades se cobran aparte
+  return true;                                            // ultimo: puede disparar levelUp y vaciar el campo
+}
+
+function hitMeteor(index, bullet) {
+  const m = G.meteors[index];
+  // Casi siempre una bala revienta una roca. La excepcion es partirla en dos, y
+  // cada mitad hereda la mitad de la probabilidad de su madre: partir y volver a
+  // partir se agota solo (§6).
+  const odds = curve().split * Math.pow(CFG.splitDecay, m.splits || 0);
+  const bSpeed = bullet ? Math.hypot(bullet.vx, bullet.vy) : CFG.bulletSpeed;
+  if (Math.random() < odds && splitMeteor(index, bSpeed)) return;
   G.meteors.splice(index, 1);
   addScore(Math.round(80 + 1600 / Math.max(4, m.r)));   // mas puntos entre mas chica
   disintegrate(m, true);
