@@ -140,11 +140,18 @@ console.log('\nsesion');
   check('y el des-mute tambien', (await muted()) === false);
 
   const demo = await page.evaluate(() => {
-    window.Sfx.init(); startGame(true);
+    window.Sfx.init(); startGame('attract');
     return { quiet: window.Sfx.quiet, attract: G.attract };
   });
-  check('la demo del menu se calla sola', demo.quiet === true && demo.attract === true);
-  const play = await page.evaluate(() => { startGame(false); return window.Sfx.quiet; });
+  check('la demo de fondo del menu se calla sola', demo.quiet === true && demo.attract === true);
+  // la demo elegida es lo contrario: se pidio para verla Y oirla
+  const shown = await page.evaluate(() => {
+    startGame('demo');
+    return { quiet: window.Sfx.quiet, attract: G.attract, demo: G.demo };
+  });
+  check('la demo elegida en el menu SI suena',
+        shown.quiet === false && shown.attract === true && shown.demo === true);
+  const play = await page.evaluate(() => { startGame('play'); return window.Sfx.quiet; });
   check('una partida real no esta en quiet', play === false);
 }
 

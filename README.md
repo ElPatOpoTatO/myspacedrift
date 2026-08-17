@@ -30,6 +30,77 @@ Ya en el mando, se toca:
 - Lado derecho — propulsor derecho
 - Ambos lados — freno
 
+## Demo
+
+El menú tiene tres opciones: `PLAY`, `DEMO` y `HIGH SCORES`. `DEMO` es para
+mirar: la máquina juega una partida de verdad y el juego se explica solo
+mientras ella vuela, así que sirve para enseñárselo a alguien sin tener que
+narrarlo.
+
+Se ve la partida entera —marcador, nivel, sonido y campo a plena luz— y encima
+dos cosas que no están al jugar:
+
+- La franja de abajo, la misma que muestra los controles en el menú, se
+  **enciende** con el propulsor que la máquina está apretando en ese instante.
+  La etiqueta está donde va el dedo en el mando, así que se lee sin traducir:
+  se ve encenderse `LEFT THRUST` y a la nave girar hacia allá.
+- Un cartel cuenta de a una regla, en el orden en que hacen falta para entender
+  lo que se está viendo: primero que hay alguien volando, después cómo se gira,
+  después que el freno no detiene del todo, y recién al final los puntos.
+
+Cualquier toque —o cualquier propulsor— sale al menú, y vuelve con `PLAY`
+marcado. El botón de sonido es el único que no saca de la demo. Si la máquina
+choca, la partida se rearma sola: no entra al top 10 y la explicación sigue
+donde iba.
+
+Es distinta de la demo de fondo, la que arranca sola tras unos segundos sin
+tocar nada en el menú: esa queda **detrás** de las opciones, apagada y en
+silencio, para no competir con el menú. La elegida es la que enseña.
+
+## Entrada de la nave
+
+Cada partida empieza un momento antes de la partida: la nave **nace quieta,
+fuera de la pantalla**, pegada a un borde al azar y con el morro girado al azar,
+y entra manejando hasta el centro. Cuando llega, el mando pasa al jugador.
+
+No es una animación aparte ni un guion: es la nave volando con las mismas
+físicas de siempre —el mismo empuje de crucero, la misma inercia de giro, la
+misma deriva, el mismo freno— traída por un autopiloto que solo tiene los dos
+propulsores del jugador. El giro al azar es lo que hace que cada entrada sea
+distinta: la nave tiene que corregir el rumbo mientras acelera.
+
+Llega en dos tramos, porque frenar y girar son el mismo par de propulsores y no
+se puede hacer las dos cosas a la vez: **lejos** cruza a fondo, afinando la
+puntería cada vez más fino a medida que se acerca —el error de rumbo se paga
+multiplicado por lo que falta—, y **cerca** (`CFG.entryBrake`) pone los dos
+propulsores y entra recta, frenando. Así llega al centro al mínimo que permiten
+las físicas, que es el piso del freno. La entrada termina en el punto más
+cercano al centro, no en un radio: con avance constante la nave no puede
+clavarse ahí.
+
+**Mientras llega no hay campo**: la pantalla está limpia, no hay puntaje, ni
+disparo, ni choques. Las rocas empiezan a entrar recién cuando el jugador tiene
+el mando, y el campo se llena desde cero con la misma rampa que al subir de
+nivel.
+
+Que el mando todavía no es del jugador se ve, sin que nadie lo explique: la nave
+llega **en gris** —en cuatro tonos, no ser el blanco pleno es diferencia
+suficiente— y en el centro hay una **escuadra** marcando adónde la llevan, que se
+va cerrando a medida que se acerca. Al llegar, la escuadra desaparece, sale un
+anillo de donde está la nave y **la nave parpadea** medio segundo, apagándose de
+verdad y no atenuándose: ese parpadeo es el aviso de que ya responde.
+
+El borde por el que entra se sortea con peso inverso a lo que hay que cruzar
+desde cada uno, y el punto dentro del borde tira al medio: en una tele ancha,
+venir de una esquina del costado es cruzar media pantalla en diagonal y la
+partida se hace esperar. Salen igual los cuatro bordes y el borde entero, solo
+que lo cerca más seguido. La entrada típica dura poco más de dos segundos.
+
+Las perillas están en `CFG` bajo `--- entrada de la nave ---`: `entryPad`,
+`entrySpread`, `entryAim`, `entryLead`, `entryBrake`, `entryArrive`,
+`entryGrace`, `entryMax`, y para lo que se ve, `entryTone`, `entryMark`,
+`readyBlink` y `readyHz`.
+
 ## Partir meteoros
 
 Casi siempre una bala revienta la roca entera, pero entre el 5% y el 10% de los
@@ -210,6 +281,7 @@ node dev/audio-test.mjs     # renderiza cada sonido a PCM y lo comprueba
 node dev/input-test.mjs     # que ningún control se quede pegado
 node dev/entry-test.mjs     # que la nave entre bien al empezar cada partida
 node dev/layout-test.mjs    # que el juego ocupe exactamente la pantalla visible
+node dev/demo-test.mjs      # que las dos demos sigan siendo lo que son
 npx http-server -p 8080     # y abre /dev/audio-lab.html para escuchar los sonidos
 ```
 
