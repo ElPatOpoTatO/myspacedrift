@@ -71,6 +71,19 @@ const CFG = {
   ink:           '#ffffff',      // el trazo pleno es el tono mas claro de la paleta
   trailFade:     0.42,           // 0..1 por frame. Mas alto = estela mas corta (§2)
 
+  // --- estrellas del fondo ---
+  // Una estrella es UN punto del LCD, no una figura: dibujada en unidades de
+  // mundo cambiaria de tamano con la pantalla y dejaria de ser una estrella.
+  // El titileo tiene que cruzar escalones de cuantizacion o no se ve nada: con
+  // cuatro tonos y sin trama, media intensidad de mas no existe. El recorrido
+  // starLo..starHi va del nivel 0 al 2 (apagada -> gris oscuro -> gris claro) y
+  // nunca llega al blanco pleno, que es del trazo del juego.
+  starDensity:   420,            // un punto cada tantos pixeles de LCD (mas alto = cielo mas vacio)
+  starPeriodMin: 2.5,            // s del ciclo mas rapido: lento a proposito, es un titileo, no un parpadeo
+  starPeriodMax: 7.0,            // s del mas lento; cada estrella cae en algun punto entre los dos
+  starLo:        0.10,           // intensidad en el valle: por debajo del corte, o sea apagada
+  starHi:        0.55,           // intensidad en la cresta: gris claro, nunca blanco
+
   // --- LCD Game Boy (shader, §21) ---
   // La paleta del hardware son cuatro tonos: blanco, gris claro, gris oscuro y
   // negro. El verde famoso era el tinte del vidrio, no la paleta del juego, asi
@@ -556,6 +569,7 @@ function resize() {
   tctx.setTransform(1, 0, 0, 1, 0, 0);            // la estela se escribe por pixel, sin transform
   tctx.clearRect(0, 0, bw, bh);
   VRAM.resize(bw, bh);
+  Stars.reset(bw, bh);                            // el cielo se sortea de nuevo: cambio el tamano del buffer
   LCD.resize();
 }
 window.addEventListener('resize', resize);
@@ -1650,7 +1664,11 @@ function steerTo(s, want, hold) {
 }
 
 /* ============================ high scores ============================ */
-let hs = { list: [], initials: [0, 0, 0], slot: 0, pending: null, holdT: 0, holdDir: 0, fromRun: false };
+// 'mine' es la fila de la partida que acaba de terminar: es lo unico que separa
+// tu record de los otros nueve, que son tres letras iguales a las tuyas. Vive
+// solo en memoria y solo hasta la proxima partida, porque marca el renglon de
+// esta vuelta, no una identidad guardada.
+let hs = { list: [], initials: [0, 0, 0], slot: 0, pending: null, holdT: 0, holdDir: 0, fromRun: false, mine: -1 };
 const LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
 
 function endRun() {
@@ -1658,6 +1676,7 @@ function endRun() {
   const entry = { i: 'AAA', s: Math.floor(G.score), l: G.level };
   const qualifies = list.length < CFG.maxScores || entry.s > list[list.length - 1].s;
   hs.pending = qualifies ? entry : null;
+  hs.mine = -1;                             // la fila de la partida anterior ya no es la tuya
   screen = SCREEN.DEAD;
 }
 
@@ -1668,6 +1687,9 @@ async function commitInitials() {
   list.push(e);
   await Store.save(list);                   // ordena por puntaje, nunca por nivel (§12.6), recorta y firma
   hs.list = Store.cached();
+  // La entrada hay que buscarla por valor: al guardar, la tabla se rehace entera
+  // (Store.clean crea objetos nuevos), asi que el que se empujo ya no esta.
+  hs.mine = hs.list.findIndex(x => x.i === e.i && x.s === e.s && x.l === e.l);
   hs.pending = null;
   hs.fromRun = true;
   screen = SCREEN.SCORES;
@@ -1705,6 +1727,9 @@ const VRAM = (() => {
     if (!(size > 1)) { plot(x, y, v); return; }
     for (let dy = 0; dy < size; dy++) for (let dx = 0; dx < size; dx++) plot(x + dx, y + dy, v);
   }
+  // Un punto suelto en px CSS. 'plot' entra en px de LCD, que es lo que usa el
+  // cielo de fondo; el juego mide en px CSS y necesita la conversion.
+  function point(x, y, v) { plot(Math.round(x * PIX), Math.round(y * PIX), v); }
 
   // 'dash' > 0 apaga tramos alternos: es el contorno punteado del escudo.
   function line(ax, ay, bx, by, v, size, dash) {
@@ -1764,7 +1789,43 @@ const VRAM = (() => {
     tctx.putImageData(img, 0, 0);
   }
 
-  return { resize, clear, fade, plot, line, polyAt, circle, blit };
+  return { resize, clear, fade, plot, point, line, polyAt, circle, blit };
+})();
+
+/* ========================= cielo de fondo =========================
+   Un campo de puntos fijos que titilan, detras de todo. Cada estrella es un
+   pixel del LCD y nada mas: se sortean en coordenadas enteras del buffer, no en
+   unidades de mundo, asi que miden lo mismo en cualquier pantalla.
+   El titileo es una sinusoide lenta que recorre starLo..starHi. Lo que se ve no
+   es la sinusoide sino los escalones que cruza al cuantizar (§21): la estrella
+   se apaga, aparece en gris oscuro, sube a gris claro y vuelve. Nunca alcanza el
+   blanco, que es el tono del trazo, y como VRAM.plot mezcla por maximo, dibujar
+   el cielo despues del mundo no puede tapar nada.
+   ==================================================================== */
+const Stars = (() => {
+  let field = [];
+
+  function reset(w, h) {
+    const n = Math.round((w * h) / CFG.starDensity);
+    field = [];
+    for (let i = 0; i < n; i++) {
+      field.push({
+        x: rndInt(0, w - 1),
+        y: rndInt(0, h - 1),
+        per: rnd(CFG.starPeriodMin, CFG.starPeriodMax),
+        ph: rnd(0, TAU),                     // sin esto el cielo entero latiria al unisono
+      });
+    }
+  }
+
+  function draw() {
+    const t = performance.now() / 1000, lo = CFG.starLo, amp = CFG.starHi - lo;
+    for (const s of field) {
+      VRAM.plot(s.x, s.y, lo + amp * (0.5 + 0.5 * Math.sin(t * TAU / s.per + s.ph)));
+    }
+  }
+
+  return { reset, draw };
 })();
 
 function drawShip(s, x, y) {
@@ -1813,29 +1874,38 @@ function drawShip(s, x, y) {
 }
 
 function drawPickup(p) {
-  // Ambos son simetricos, huecos y con respiracion (§8). Se distinguen por
-  // silueta y por el sentido de las ondas, nunca por color.
+  // El cuerpo del recolectable mide 2.3 puntos de LCD de radio: una figura de
+  // cinco por cinco. A esa escala un hexagono y un rombo caen sobre los mismos
+  // pixeles, que es por lo que antes no se distinguian. Asi que no se separan
+  // por numero de lados sino por tres ejes a la vez, que a cinco pixeles si
+  // sobreviven, y sin usar color, que en cuatro tonos no existe (§8):
+  //
+  //            escudo                   reparacion
+  //   forma    redonda, dispersa        recta, plena
+  //   giro     orbita                   quieta
+  //   ondas    hacia afuera (irradia)   hacia adentro (absorbe)
+  //
   const breathe = 1 + Math.sin(p.t * 4.2) * 0.16;
   const R = p.r * breathe;
   const repair = p.kind === 'repair';
-  const n = repair ? 4 : 6;                    // rombo vs hexagono
-  const spin = repair ? p.t * 0.35 : p.t * 0.6;
 
-  const ngon = (rad) => {
-    const pts = [];
-    for (let i = 0; i < n; i++) {
-      const a = i * TAU / n;
-      pts.push({ x: Math.cos(a) * rad, y: Math.sin(a) * rad });
-    }
-    VRAM.polyAt(pts, p.x, p.y, spin, true, 1, 1);
-  };
-  ngon(R);
   if (repair) {
-    // cruz interior: la marca de reparacion
-    VRAM.line(p.x - R * 0.45, p.y, p.x + R * 0.45, p.y, 1, 1);
-    VRAM.line(p.x, p.y - R * 0.45, p.x, p.y + R * 0.45, 1, 1);
+    // Cruz gruesa alineada a los ejes: el simbolo de salud de toda la vida, y a
+    // cinco pixeles se lee de una. Va sin girar a proposito — quieta se
+    // distingue mas, y ademas una cruz que gira se convierte en una equis cada
+    // cuarto de vuelta y deja de ser una cruz.
+    VRAM.line(p.x - R, p.y, p.x + R, p.y, 1, 2);
+    VRAM.line(p.x, p.y - R, p.x, p.y + R, 1, 2);
   } else {
-    ngon(R * 0.42);
+    // Nucleo con tres satelites en orbita: redondo, disperso y en movimiento, o
+    // sea lo contrario de la cruz en los tres ejes. La orbita es lo que se ve
+    // primero aunque el nucleo quede en un solo punto.
+    VRAM.point(p.x, p.y, 1);
+    const spin = p.t * 1.1;
+    for (let k = 0; k < 3; k++) {
+      const a = spin + k * TAU / 3;
+      VRAM.point(p.x + Math.cos(a) * R * 1.6, p.y + Math.sin(a) * R * 1.6, 1);
+    }
   }
   for (let k = 0; k < 3; k++) {
     const ph = ((p.t * 0.75) + k / 3) % 1;
@@ -2280,8 +2350,12 @@ function drawScores() {
   for (let i = 0; i < list.length && top + i * rowH < boxTop - 4; i++) {
     const e = list[i], y = top + i * rowH;
     const tone = i < 3 ? 3 : 2;
+    // Tus iniciales laten entre los dos tonos claros: en una tabla de tres letras
+    // por fila es lo unico que dice cual sos. El latido es entre el 3 y el 2, no
+    // entre encendido y apagado, para que se note sin robarle la vista al top 3.
+    const name = i === hs.mine ? (blink(420) ? 3 : 2) : tone;
     text(String(i + 1).padStart(2, ' '), x0, y, 1, 'left', 1);
-    text(e.i, x0 + 18, y, 1, 'left', tone);
+    text(e.i, x0 + 18, y, 1, 'left', name);
     text(String(e.s).padStart(6, '0'), x1 - 30, y, 1, 'right', tone);
     text('LV ' + e.l, x1, y, 1, 'right', 1);
   }
@@ -2311,7 +2385,8 @@ function activate(label) {
   Sfx.init(); Sfx.resume(); Sfx.ui();
   if (label === 'MUTE') { Sfx.toggleMute(); return true; }
   if (label === 'PLAY') { G.attract = false; startGame(false); return true; }
-  if (label === 'HIGH SCORES') { hs.fromRun = false; screen = SCREEN.SCORES; return true; }
+  // Entrando desde el menu no hay partida recien jugada: no hay fila propia que marcar.
+  if (label === 'HIGH SCORES') { hs.fromRun = false; hs.mine = -1; screen = SCREEN.SCORES; return true; }
   if (label === 'BACK') { screen = SCREEN.MENU; Input.lastTouch = performance.now(); return true; }
   if (label === 'PLAY AGAIN') { startGame(false); return true; }
   if (label === 'MENU') { screen = SCREEN.MENU; Input.lastTouch = performance.now(); return true; }
@@ -2422,9 +2497,15 @@ function frame(now) {
   const worldVisible = screen === SCREEN.PLAY || (screen === SCREEN.MENU && G.attract);
   if (worldVisible) renderWorld();
   // el campo congelado queda de fondo, apagandose
-  if (screen === SCREEN.DEAD || screen === SCREEN.INITIALS) VRAM.fade(0.05);
+  else if (screen === SCREEN.DEAD || screen === SCREEN.INITIALS) VRAM.fade(0.05);
+  // menu quieto y tabla de records: no hay mundo, solo cielo. Sin este borrado
+  // el buffer repetiria para siempre el ultimo cuadro de la demo.
+  else VRAM.clear();
+  // El cielo va ultimo: VRAM.plot mezcla por maximo, asi que una estrella no
+  // puede pisar un trazo del juego, pero un trazo si tapa una estrella.
+  if (screen !== SCREEN.ROTATE) Stars.draw();
 
-  if (screen !== SCREEN.SCORES && screen !== SCREEN.ROTATE) {
+  if (screen !== SCREEN.ROTATE) {
     // el apagado del modo demo y el destello de nivel/dano se aplican sobre la
     // intensidad, antes de cuantizar: mezclarlos despues inventaria medios tonos
     const dim   = (screen === SCREEN.MENU && G.attract) ? 0.55 : 1;
