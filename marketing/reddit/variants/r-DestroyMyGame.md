@@ -18,14 +18,18 @@ Two thrusters, no accelerator, no fire button, and a brake that won't slow you p
 
 > Browser game, unfinished. The clip is the machine playing it, not me.
 >
-> The whole control scheme is a left thruster and a right thruster. The engine never switches off,
-> so you never accelerate and never stop — holding both slows you to half speed and no further. Any
-> thruster also fires, so you aim by turning. Two hits ends a run.
+> The whole control scheme is a left thruster and a right thruster, by design. The engine never
+> switches off, so you never accelerate and never stop — holding both slows you to half speed and no
+> further. Any thruster also fires, so you aim by turning. Two hits ends a run.
 >
 > https://elpatopotato.github.io/myspacedrift/
 >
-> What I want is the part I can't do myself: tell me what to remove. I know what I like about it,
-> which is exactly why I can't see what's wrong with it. If the controls are simply bad, say that.
+> What I want is the part I can't do myself: tell me what's wrong with it. What to cut, what's
+> missing, what feels bad to play. I know what I like about it, which is exactly why I can't see the
+> rest.
+>
+> The two-input scheme itself is the one thing that isn't up for discussion — everything built on
+> top of it is.
 
 ---
 

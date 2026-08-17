@@ -7,10 +7,14 @@
 > sub's rules page and read it before you post there.** Rules change, and a removed post costs you
 > that subreddit for weeks.
 
-You're asking for feedback, not looking for an audience, and that changes the ordering. The places
-worth posting are the ones where people will actually reply with something useful, which mostly
-means small communities that came to talk about games rather than large ones that came to look at
-them. A thousand upvotes and no comments would be a failed post here.
+You're asking for general feedback, not looking for an audience, and that changes the ordering. The
+places worth posting are the ones where people will actually reply with something useful, which
+mostly means small communities that came to talk about games rather than large ones that came to
+look at them. A thousand upvotes and no comments would be a failed post here.
+
+One thing that holds across all of them: the two-thruster scheme is described as a decision, never
+as a doubt. Every sub on this list contains someone who will tell you to add a fire button, and the
+wording in `POST.md` is built to get that out of the way in one reply rather than ten.
 
 The bottom half of this list is mostly reach, and reach isn't what you're after. It's included so
 you know what's there, not as a queue to work through.
@@ -24,7 +28,7 @@ you know what's there, not as a queue to work through.
 | 3 | r/WebGames | Browser games, nothing to install. People here will actually play it. | Low | The mechanic, then get out of the way |
 | 4 | r/alphaandbetausers | Explicitly for early builds looking for testers | Low | What state it's in and what you need |
 | 5 | r/Gameboy | Will notice whether the four tones and 59.7275 Hz are right | Medium | That it isn't a ROM, immediately |
-| 6 | r/IndieDev | Will engage with the design question rather than the game | Low | The problem you're stuck on |
+| 6 | r/IndieDev | Will engage with the design decision rather than just the game | Low | What removing two inputs did to everything else |
 | 7 | r/tinycode | One HTML file, no build step, no dependencies | Low | The single-file angle |
 | 8 | r/SideProject | Solo-project audience, used to half-finished things | Low | That it isn't done |
 | 9 | r/IndieGaming | Large and receptive, but you'll get reactions more than answers | Medium | The clip |

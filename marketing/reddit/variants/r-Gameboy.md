@@ -13,15 +13,15 @@ worth asking them specifically.
 
 ## Title
 
-Not a ROM — a browser game I built to the DMG's constraints. Would like to know if I got the details wrong.
+Not a ROM — a browser game I built to the DMG's constraints, four tones and 59.7275 Hz included
 
 ---
 
 ## Body
 
 > Up front so nobody wastes a click: this isn't a Game Boy game and it won't run on hardware. It's a
-> web game I built to the DMG's rules, and I'd like to know from people who'd notice whether I got
-> them right.
+> web game I built to the DMG's rules, and this seemed like the place where people would actually
+> notice the details.
 >
 > The scene isn't drawn with the canvas stroke functions, because antialiasing puts half-tones on
 > every edge and half-tones don't exist on that screen. Everything is rasterized by hand — Bresenham
@@ -36,10 +36,10 @@ Not a ROM — a browser game I built to the DMG's constraints. Would like to kno
 >
 > https://elpatopotato.github.io/myspacedrift/ — free, and unfinished.
 >
-> You play it with two buttons; the engine never stops, so you only steer. If any of the above is
-> wrong, or if something about it reads as fake to you, I'd rather hear it than not. And if you want
-> to make a contest of it, post what you score — the bot on the demo screen averages about 1,500 and
-> managed 3,556 at best.
+> You play it with two buttons; the engine never stops, so you only steer. If I've got any of the
+> above wrong, or something about it reads as fake to you, I'd rather hear it than not — and general
+> thoughts on the game are welcome too, since it's still unfinished. If you want to make a contest of
+> it, post what you score: the bot on the demo screen averages about 1,500 and managed 3,556 at best.
 
 ---
 

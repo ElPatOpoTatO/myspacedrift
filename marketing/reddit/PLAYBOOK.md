@@ -86,15 +86,23 @@ inline preview; a link gets scrolled past.
 
 ## 5. In the comments
 
-Reply to everything in the first hour, briefly. Humility outperforms polish here — the post is a
-request for criticism, so treat every piece of criticism as the thing you asked for.
+Reply to everything in the first hour, briefly. Treat criticism as the thing you asked for — but
+being open to feedback isn't the same as being undecided, and the difference matters most here.
+The two-input scheme is settled. Someone telling you to add a fire button isn't giving you feedback
+on the game you made, they're describing a different game, and it's fine to say so pleasantly and
+move on.
 
 Predictable comments, and honest answers to them:
 
+**"You should add a fire button / a proper brake."**
+It's deliberate — the game is about having only two inputs, and adding a third would remove the thing
+it's built on. Say that once, without arguing, and don't relitigate it further down the thread. This
+will be the most common suggestion you get.
+
 **"The controls are frustrating / I can't stop."**
-That's the design, and it's also the open question. Say so, and ask them whether it stayed
-frustrating or turned into something they got used to. That distinction is the single most useful
-thing you can learn from this whole exercise.
+Not being able to stop is the design. The part worth asking back is whether it stayed frustrating or
+turned into something they got the hang of — that's a real answer about the tuning, and the tuning
+genuinely is open. Numbers like `brakeFloor`, `shipFriction` and `cruiseThrust` can all move.
 
 **"It's just Asteroids."**
 It shares the rock field. What's different is that there's no thrust button and no fire button — the
@@ -126,9 +134,10 @@ it" is honest. "I'll add that" isn't, until it's added.
 ## 6. Running the score challenge
 
 The post asks people to reply with their best score, ideally with a clip. The reason it's worth
-including is that one run tells someone almost nothing about the controls — the whole question you're
-asking is whether the drift becomes something you can work with, and that only happens after a few
-goes. A score to chase is the simplest way to get people to play long enough to have a real opinion.
+including is that one run tells someone almost nothing — the drift takes a few goes before it stops
+feeling like an accident, and feedback from someone who played once is feedback about a game they
+haven't met yet. A score to chase is the simplest way to get people to play long enough to have an
+opinion worth reading.
 
 It only works if you actually run it:
 

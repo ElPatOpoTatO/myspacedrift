@@ -3,9 +3,10 @@
 The canonical version. Per-subreddit rewrites live in `variants/`; this is the one they're cut from.
 Read `PLAYBOOK.md` before posting — the account rules there matter more than the words here.
 
-This is a request for feedback, not an announcement. The difference shows up in what gets left out:
-no feature list, no "free, no install", no reason why anyone should be impressed. Someone reading it
-should come away knowing what they'd be testing and what's being asked of them, and nothing else.
+Two things this post is not. It isn't an announcement: no feature list, no "free, no install", no
+reason why anyone should be impressed. And it isn't a design consultation — **the two thrusters, the
+missing fire button and the engine that never stops are settled decisions, not open questions.**
+They get stated as what the game is, and the post asks for general feedback on the result.
 
 Links:
 
@@ -16,15 +17,15 @@ Links:
 
 ## Titles
 
-Plain, ordered. Say what you're asking for. A title written to get clicks sets up a post that then
-has to live up to it.
+Plain, ordered. Say what the game is and that you'd like thoughts on it. Nothing that implies you
+suspect it's broken.
 
-1. Made a browser game with no accelerator and no fire button. I can't tell if the controls work.
-2. I can't tell whether my game's main idea is a good constraint or just annoying
-3. Two-thruster space game, unfinished. Looking for people to tell me what's wrong with it.
-4. You can't stop in my game, only turn. Is that a rule or a problem?
-5. Small browser game I've been working on — would like some opinions on the controls before I add more
-6. Asking for feedback on a two-button arcade game where the engine never switches off
+1. Made a browser game where you only steer — no accelerator, no fire button. Feedback welcome.
+2. Two-thruster arcade game in the browser. The engine never switches off. Would like some thoughts.
+3. Small browser game I've been building: you can turn, but you can never stop. Tell me what you think.
+4. Been working on a two-button space game. After some general feedback before I add more to it.
+5. Browser game where turning is aiming and braking at the same time. Any opinions welcome.
+6. My Space Drift — two-thruster arcade game, still unfinished. Would like some feedback.
 
 Keep whichever you pick inside two lines in a browser.
 
@@ -32,45 +33,39 @@ Keep whichever you pick inside two lines in a browser.
 
 ## Post body
 
-> I've been building a small browser game and I've reached the point where I can't tell if it's any
-> good. It works, it just isn't finished, and I'd rather find out what's wrong with it now than keep
-> adding to something that doesn't hold up.
+> I've been building a small browser game and it's reached the point where more eyes would help. It
+> works, it just isn't finished, and I'd rather hear what people make of it now than after I've
+> added another ten things to it.
 >
-> It's a rock-dodging game with an odd control scheme, and the control scheme is the part I'm least
-> sure about. There's no accelerator and no fire button. The engine runs the whole time, and you get
-> a left thruster and a right thruster. Holding both slows you down, but only to half speed, so you
-> can't actually stop. Any thruster also fires, which means you aim by turning.
+> It's a rock-dodging game built around one idea: you only steer. There's no accelerator and no fire
+> button, on purpose. The engine runs the whole time and all you get is a left thruster and a right
+> thruster. Holding both slows you down, but only to half speed, so you can never quite stop — and
+> any thruster also fires, so you aim by turning.
 >
 > Two hits ends a run, and a run lasts about half a minute.
 >
 > https://elpatopotato.github.io/myspacedrift/
 >
-> What I'd like to know:
+> Play a few rounds and tell me what you think — what you'd add, what you'd take out, what you'd
+> change. First impressions are useful too, even the vague ones. It's one HTML file with all the
+> numbers in a block at the top, so most things are quick to change.
 >
-> - Does never being able to fully stop feel like a rule you can work with, or just irritating?
-> - Two lives per run. Too few?
-> - Should something shoot back, or would that spoil the two-button idea?
-> - Anything in there you'd take out?
->
-> Anything else you notice is welcome too, including if the whole premise is wrong. It's one HTML
-> file with all the numbers in a block at the top, so most of this is quick to change.
->
-> If you play a few rounds and end up with a score you're pleased with, post it — a clip if that's
-> easy, a photo of the screen if it isn't. The bot that plays the demo screen averages about 1,500
-> and its best across thirteen runs was 3,556, if you want something to measure against.
+> If you end up with a score you're pleased with, post it — a clip if that's easy, a photo of the
+> screen if it isn't. The bot that plays the demo screen averages about 1,500 and its best across
+> thirteen runs was 3,556, if you want something to measure against.
 
 ---
 
 ## Follow-up comment
 
-Post this yourself as the first comment. It's the detail that would have made the post too long,
-not a second pitch.
+Post this yourself as the first comment. It's the detail that would have made the post too long.
 
 > Some details that didn't fit.
 >
 > **Controls.** `←` / `→` or `A` / `D` are the two thrusters, and `Space` presses both, which is the
 > brake. On a touchscreen it's the left half and right half of the screen. Menus use the same two
-> inputs — one side moves, both together selects. There's no third button anywhere.
+> inputs — one side moves, both together selects. There's no third button anywhere in the game, which
+> is the whole design rather than something I haven't got round to.
 >
 > **Two devices, if you have them.** Open it on a laptop or TV and it shows a six-digit code. Put
 > `?ctrl` on the end of the same URL on your phone, type the code, and the phone works as the pad.
@@ -95,11 +90,17 @@ not a second pitch.
 
 ## Notes for whoever edits this later
 
-- The four questions are the post. If length has to come out of somewhere, cut a description
-  paragraph, not a question.
-- Resist adding a feature list. Every line that explains why the game is good is a line that isn't
-  asking for anything, and this post only works if it reads like a person who's stuck.
-- Don't promise to implement suggestions. "Most of this is quick to change" is a claim about the
+- **Never write the core design as an open question.** No "I can't tell if the controls work", no
+  "is that a rule or just annoying", no "should something shoot back". The single-input scheme is
+  the game; asking whether it should exist invites a thread arguing about a decision that's already
+  made, and it makes the post read as if you don't back your own work.
+- The word "on purpose" in the second paragraph is doing real work. It stops the first three replies
+  being suggestions to add a fire button.
+- The ask is deliberately open — add, remove, change. That's broader than a list of questions and it
+  suits a game that's unfinished in a lot of small ways rather than uncertain in one big way.
+- Resist adding a feature list. Every line explaining why the game is good is a line that isn't
+  asking for anything.
+- Don't promise to implement suggestions. "Most things are quick to change" is a claim about the
   codebase and it's true; "I'll add whatever you ask for" isn't.
 - Don't add a "known issues" list. Nothing is broken, and inventing faults to sound humble reads
   worse than saying nothing.

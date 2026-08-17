@@ -19,10 +19,10 @@ kind often want a specific header format naming the platform and what you need f
 > **What state it's in:** early. Everything in it works; there's just less of it than there will be.
 > **What I need:** a few runs from you, and then whatever you thought of it.
 >
-> The unusual part is the controls, and that's the part I most want tested. You have a left thruster
-> and a right thruster and no third input. The engine runs permanently, so you never accelerate;
-> holding both thrusters slows you down but only to half speed, so stopping isn't something the game
-> lets you do. Any thruster also fires, so aiming happens by turning.
+> It's built on one idea: you only steer. You have a left thruster and a right thruster and no third
+> input. The engine runs permanently, so you never accelerate; holding both thrusters slows you down
+> but only to half speed, so stopping isn't something the game lets you do. Any thruster also fires,
+> so aiming happens by turning.
 >
 > Runs are short — two hits and it's over — so trying it properly means a handful of them rather than
 > one long sitting.
@@ -34,12 +34,8 @@ kind often want a specific header format naming the platform and what you need f
 > phone into the controller. That path has had the least testing of anything in the game, so if it
 > fails for you I'd really like to know what happened.
 >
-> Questions I'm stuck on:
->
-> - Never being able to fully stop — a rule you can work with, or just irritating?
-> - Two lives per run. Too few?
-> - Should something shoot back?
-> - Anything in there you'd take out?
+> Whatever you make of it is useful — what you'd add, what you'd take out, what you'd change, and
+> anything that broke. Vague first impressions count.
 >
 > If you want a reason to play more than once, post your best score. The demo bot averages about
 > 1,500 and its best across thirteen runs was 3,556.

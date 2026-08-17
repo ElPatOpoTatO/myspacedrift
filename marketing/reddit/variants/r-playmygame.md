@@ -10,7 +10,7 @@ first, and mean it.
 
 ## Title
 
-[Web] Two-button arcade game, unfinished — I'd like to know if the controls are a good idea or a bad one
+[Web] Two-button arcade game where you only steer — unfinished, after some general feedback
 
 Adjust the bracket tag to whatever format the sub is using this month.
 
@@ -21,28 +21,21 @@ Adjust the bracket tag to whatever format the sub is using this month.
 > **Platform:** browser, desktop or phone. Nothing to install.
 > **State:** unfinished. Everything in it works; there's just less of it than there will be.
 >
-> The bit I'm unsure about is the controls. There's no accelerator, because the engine never
-> switches off, and no fire button, because any thruster fires. You get a left thruster and a right
-> thruster. Holding both slows you down but only to half speed, so you can't stop. That means
-> turning, aiming and slowing are all the same two inputs competing with each other, which is either
-> the whole game or the whole problem and I genuinely can't tell which.
+> It's built on one idea: you only steer. There's no accelerator, because the engine never switches
+> off, and no fire button, because any thruster fires. You get a left thruster and a right thruster.
+> Holding both slows you down but only to half speed, so you can't stop. Turning, aiming and slowing
+> are all the same two inputs competing with each other, and that competition is the game.
 >
 > Two hits ends a run, and a run lasts about half a minute.
 >
 > https://elpatopotato.github.io/myspacedrift/
 >
-> What I'd like to know from anyone who plays it:
->
-> - Does never being able to fully stop feel like a rule of the game, or like the game fighting you?
-> - Two lives per run — too few?
-> - Should something shoot back, or would enemies spoil the two-button idea?
-> - Anything already in there you'd remove?
+> Play a few rounds and tell me what you make of it — what you'd add, what you'd take out, what
+> you'd change. First impressions are useful too. It's a single HTML file with all the tuning values
+> in a block at the top, so most things are quick to change.
 >
 > If you end up with a score you like, post it — a clip if that's easy. The bot that flies the demo
 > screen averages about 1,500 and its best across thirteen runs was 3,556.
->
-> It's a single HTML file with all the tuning values in a block at the top, so most of this is quick
-> to change.
 
 ---
 

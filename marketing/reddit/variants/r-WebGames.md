@@ -11,23 +11,23 @@ This audience wants to click and play, so keep the body short and let them get o
 
 ## Title
 
-You can't stop in this one, only turn. Two buttons, and I'd like to know if that's any fun.
+You can't stop in this one, only turn. Two buttons and nothing else.
 
 ---
 
 ## Body
 
-> I've been building this and I can't tell any more whether the controls are a good idea.
+> A browser game I've been building. You only steer.
 >
-> The engine is on the whole time. You get a left thruster and a right thruster, and that's all of
-> it — holding both slows you down but only to half speed, so stopping isn't available. Any thruster
-> also fires, so you aim by turning. Two hits ends a run.
+> The engine is on the whole time, so there's no accelerator, and any thruster fires, so there's no
+> fire button either. All you get is a left thruster and a right thruster — holding both slows you
+> down but only to half speed, so stopping isn't available. Two hits ends a run.
 >
 > https://elpatopotato.github.io/myspacedrift/
 >
-> It's unfinished and I'm still working out what goes in, so if something about it irritates you I'd
-> like to hear which part. And if you get a score you're pleased with, post it — the bot on the demo
-> screen manages about 1,500 on an average run and 3,556 was its best.
+> It's unfinished, so I'd like whatever you make of it: what you'd add, what you'd cut, what you'd
+> change. And if you get a score you're pleased with, post it — the bot on the demo screen manages
+> about 1,500 on an average run and 3,556 was its best.
 
 ---
 
