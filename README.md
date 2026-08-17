@@ -57,6 +57,42 @@ Es distinta de la demo de fondo, la que arranca sola tras unos segundos sin
 tocar nada en el menú: esa queda **detrás** de las opciones, apagada y en
 silencio, para no competir con el menú. La elegida es la que enseña.
 
+## Entrada de la nave
+
+Cada partida empieza un momento antes de la partida: la nave **nace quieta,
+fuera de la pantalla**, pegada a un borde al azar y con el morro girado al azar,
+y entra manejando hasta el centro. Cuando llega, el mando pasa al jugador.
+
+No es una animación aparte ni un guion: es la nave volando con las mismas
+físicas de siempre —el mismo empuje de crucero, la misma inercia de giro, la
+misma deriva, el mismo freno— traída por un autopiloto que solo tiene los dos
+propulsores del jugador. El giro al azar es lo que hace que cada entrada sea
+distinta: la nave tiene que corregir el rumbo mientras acelera.
+
+Llega en dos tramos, porque frenar y girar son el mismo par de propulsores y no
+se puede hacer las dos cosas a la vez: **lejos** cruza a fondo, afinando la
+puntería cada vez más fino a medida que se acerca —el error de rumbo se paga
+multiplicado por lo que falta—, y **cerca** (`CFG.entryBrake`) pone los dos
+propulsores y entra recta, frenando. Así llega al centro al mínimo que permiten
+las físicas, que es el piso del freno. La entrada termina en el punto más
+cercano al centro, no en un radio: con avance constante la nave no puede
+clavarse ahí.
+
+**Mientras llega no hay campo**: la pantalla está limpia, no hay puntaje, ni
+disparo, ni choques. Las rocas empiezan a entrar recién cuando el jugador tiene
+el mando, y el campo se llena desde cero con la misma rampa que al subir de
+nivel.
+
+El borde por el que entra se sortea con peso inverso a lo que hay que cruzar
+desde cada uno, y el punto dentro del borde tira al medio: en una tele ancha,
+venir de una esquina del costado es cruzar media pantalla en diagonal y la
+partida se hace esperar. Salen igual los cuatro bordes y el borde entero, solo
+que lo cerca más seguido. La entrada típica dura poco más de dos segundos.
+
+Las perillas están en `CFG` bajo `--- entrada de la nave ---`: `entryPad`,
+`entrySpread`, `entryAim`, `entryLead`, `entryBrake`, `entryArrive`,
+`entryGrace` y `entryMax`.
+
 ## Partir meteoros
 
 Casi siempre una bala revienta la roca entera, pero entre el 5% y el 10% de los
