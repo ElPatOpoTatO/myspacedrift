@@ -1,0 +1,127 @@
+# How to actually post this
+
+Good copy in a filtered post reaches nobody. This file is the part that decides whether anyone sees
+`POST.md` at all. Work down it in order.
+
+---
+
+## 1. Check the account first
+
+This is the most likely reason a good post disappears, and it has nothing to do with the writing.
+
+Most game subreddits enforce some version of a **10:1 rule** — roughly one self-promotional post for
+every nine posts where you're participating in the community. Several also gate on account age and
+karma, commonly around **a week old and ~20 karma minimum**, and many cap link posts at **one per
+week**.
+
+Before posting anywhere, check:
+
+- [ ] Account is at least a week old
+- [ ] Comment karma is comfortably above 20
+- [ ] Post history isn't only links to your own things
+- [ ] You've commented genuinely in at least a few of the target subs recently
+
+If any of those fail, spend a few days commenting on other people's games first. This isn't a
+formality — a fresh account posting a link to its own project is the exact pattern these filters
+were built to catch, and the removal is usually silent. You won't be told; the post will just get no
+traffic.
+
+---
+
+## 2. Pick the moment
+
+- **Thursday to Saturday, morning.** That's the window that tends to get traction.
+- **Be free for the hour afterwards.** The first hour decides how far a post travels, and the thing
+  that drives it is you replying to every comment as it arrives. If you can't sit with it for an
+  hour, post another day.
+
+---
+
+## 3. Order and spacing
+
+Do not post everywhere at once. The same post appearing in eight subreddits inside an hour is the
+most reliable way to get filtered, and several of these subs cap link posts at one a week anyway.
+
+**Round one** — two or three subs, one day:
+
+1. r/DestroyMyGame
+2. r/playmygame
+3. r/WebGames
+
+Then stop. Read what comes back. If a post got removed, find out why before repeating the mistake
+somewhere else. If the feedback contradicts something in the post, fix the post before round two.
+
+**Round two** — a few days later, once you know which framing landed: r/alphaandbetausers,
+r/IndieDev, r/tinycode, r/SideProject.
+
+**Round three** — the higher-risk, higher-reach ones, and only if rounds one and two went well:
+r/Gameboy, r/retrogaming, r/IndieGaming, plus the weekly threads on r/gamedev and r/webdev.
+
+Before each individual post: **sort that subreddit by top-of-month and look at what actually does
+well there.** Match its format. This takes two minutes and is worth more than any rewording.
+
+---
+
+## 4. The media
+
+- `media/gameplay.gif` — the bot playing a real run at level 5. This is the one to attach almost
+  everywhere.
+- `media/demo-cards.gif` — the in-game DEMO cards explaining the controls, with the thruster strip
+  lighting up underneath. Use it where the mechanic is hard to grasp from a still — it explains the
+  controls better than any paragraph in the post does.
+- `media/shot-menu.png` — the menu with the pairing code, so it's the one that sells the
+  phone-controller idea. Note the clipped URL described below.
+- `media/shot-play.png`, `media/shot-level.png` — two more gameplay stills.
+- `media/shot-scores.png` — the high-score table (filled with placeholder names by the capture
+  script, not real scores).
+
+Upload the GIF natively where the subreddit allows it rather than linking out. Native media gets an
+inline preview; a link gets scrolled past.
+
+---
+
+## 5. In the comments
+
+Reply to everything in the first hour, briefly. Humility outperforms polish here — the post is a
+request for criticism, so treat every piece of criticism as the thing you asked for.
+
+Predictable comments, and honest answers to them:
+
+**"The controls are frustrating / I can't stop."**
+That's the design, and it's also the open question. Say so, and ask them whether it stayed
+frustrating or turned into something they got used to. That distinction is the single most useful
+thing you can learn from this whole exercise.
+
+**"It's just Asteroids."**
+It shares the rock field. What's different is that there's no thrust button and no fire button — the
+engine is always on and any thruster fires, so steering is the whole interface. Say it plainly and
+don't get defensive; it's a fair first impression.
+
+**"Two lives is too few."**
+Take the note. It's `CFG.lives` and it's one number.
+
+**"Why is there no licence?"**
+Currently true — the repo has no LICENSE file, which by default means all rights reserved. Either
+add one before posting or answer honestly that you haven't picked one yet.
+
+**"It doesn't work on my phone."**
+Ask for the browser and whether the screen was in landscape. The game locks to landscape and shows a
+rotate prompt, which people sometimes read as a freeze.
+
+**"I can't read the pairing URL / it's cut off."**
+This one is real and worth knowing before you post. The menu line
+`PHONE elpatopotato.github.io/myspacedrift/?ctrl` is 281 LCD dots wide, and a 16:9 screen is only
+256 dots across (144 × 16/9), so it gets clipped at both ends on every normal TV and laptop — it
+needs roughly 2.22:1 to fit. `media/shot-menu.png` shows it exactly as it appears. Since that line
+is how people get their phone connected, it's worth fixing before the post rather than answering
+this in comments.
+
+**Do not** reply to a suggestion with a promise to implement it. "That's a small change, I'll try
+it" is honest. "I'll add that" isn't, until it's added.
+
+---
+
+## 6. Afterwards
+
+If a suggestion from a thread ships, go back to that thread and say so. It costs one comment, and
+it's the difference between people who commented once and people who come back to see what changed.

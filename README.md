@@ -4,6 +4,11 @@ Juego web (PWA) jugable desde el navegador.
 
 **Jugar:** https://elpatopotato.github.io/myspacedrift/
 
+![Una partida en marcha](media/gameplay.gif)
+
+*La juega el bot de la demo: el GIF sale de `dev/capture-media.mjs`, que graba
+una partida de verdad.*
+
 - `index.html` — juego completo (canvas + JS)
 - `sw.js` — service worker, cache-first (funciona offline tras la primera carga)
 - `manifest.webmanifest` — instalable como app
@@ -287,3 +292,20 @@ npx http-server -p 8080     # y abre /dev/audio-lab.html para escuchar los sonid
 
 Los sonidos se sintetizan en el navegador (nada grabado, ningún archivo); las reglas de
 diseño están en `.claude/skills/lcd-audio/SKILL.md`.
+
+### Material para mostrarlo
+
+`media/` no se precachea: son GIFs y fotos para enseñar el juego fuera, no
+archivos del juego. Se regeneran con:
+
+```sh
+npm i -g ffmpeg-static            # además de playwright
+node dev/capture-media.mjs
+```
+
+El juego no se deja fotografiar a mano —una captura del sistema lo reescala y
+le mete medios tonos que en el LCD no existen—, así que la toma sale del
+navegador y la vuela el mismo bot de la demo.
+
+`marketing/reddit/` tiene el texto para publicarlo, la lista de subreddits y el
+orden en que conviene ir.
