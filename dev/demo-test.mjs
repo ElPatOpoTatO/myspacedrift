@@ -31,12 +31,19 @@ console.log('\nel menu');
   check('DEMO va entre PLAY y HIGH SCORES',
         rows[0] === 'PLAY' && rows[1] === 'DEMO' && rows[2] === 'HIGH SCORES', JSON.stringify(rows));
 
-  // la tercera fila estira el cuadro: el codigo de emparejamiento tiene que haberse corrido
-  const g = await q(() => ({ lh: LH(), top: 5 * T, link: 12 * T, gh: Font.GH }));
-  const boxBottom = g.top + 6 + 3 * 12;
-  check('el cuadro y su ayuda no pisan el codigo', boxBottom + 4 + g.gh <= g.link,
-        `ayuda hasta ${boxBottom + 4 + g.gh}, codigo en ${g.link}`);
-  check('el codigo entra en el LCD', g.link + 8 + 14 <= g.lh, `${g.link + 22} de ${g.lh}`);
+  // La tercera fila estira el cuadro y el codigo de emparejamiento tiene que
+  // haberse corrido. El reparto ya no son constantes: con el tope de columnas la
+  // pantalla puede quedar en 104 filas y el menu se reacomoda (§21.2), asi que
+  // se lee el reparto que publica el dibujo en vez de recalcular las posiciones.
+  const g = await q(() => ({ lh: LH(), gh: Font.GH, ...Menu.layout }));
+  const boxBottom = g.boxTop + g.boxH;
+  check('el cuadro no pisa el codigo', boxBottom <= g.codeY,
+        `cuadro hasta ${boxBottom}, codigo en ${g.codeY}`);
+  check('la ayuda de navegacion tampoco', !g.help || boxBottom + 4 + g.gh <= g.codeY,
+        g.help ? `ayuda hasta ${boxBottom + 4 + g.gh}, codigo en ${g.codeY}` : 'no entraba, no se dibuja');
+  check('el codigo entra en el LCD', g.codeY + g.codeH <= g.lh, `${g.codeY + g.codeH} de ${g.lh}`);
+  check('y no pisa la franja de controles', g.codeY + g.codeH <= g.hintsY,
+        `codigo hasta ${g.codeY + g.codeH}, franja en ${g.hintsY}`);
 }
 
 console.log('\nla demo elegida');

@@ -69,7 +69,9 @@ const CFG = {
   // del Game Boy: lo unico que importa aca es la luminancia relativa.
   bg:            '#000000',      // el tono mas oscuro de la paleta
   ink:           '#ffffff',      // el trazo pleno es el tono mas claro de la paleta
-  trailFade:     0.42,           // 0..1 por frame. Mas alto = estela mas corta (§2)
+  trailFade:     0.42,           // 0..1 por cuadro de 60 Hz. Mas alto = estela mas corta (§2).
+                                 // Se convierte a tiempo real en VRAM.fade: la estela dura
+                                 // los mismos milisegundos vaya el aparato a los cuadros que vaya.
 
   // --- estrellas del fondo ---
   // Una estrella es UN punto del LCD, no una figura: dibujada en unidades de
@@ -90,6 +92,18 @@ const CFG = {
   // que un juego nativo se disena en estos cuatro y nada mas.
   gbPalette:     ['#000000', '#545454', '#a8a8a8', '#ffffff'],   // de oscuro a claro
   lcdRows:       144,            // exactamente las filas de la Game Boy
+  // Tope de columnas. La consola tenia 160 y aca el ancho no puede ser fijo,
+  // porque el lienzo llena la pantalla y hay teles de 16:9, portatiles de 16:10
+  // y moviles de 21:9. Lo que si puede es tener techo: pasado el tope el punto
+  // se agranda en vez de multiplicarse, asi que ninguna pantalla pasa de aca.
+  // 160 clavado se probo y no da: la nave queda en 5 puntos y es una manchita.
+  lcdCols:       200,
+  // Piso de filas. Agrandar el punto baja las filas, y por debajo de aca la
+  // interfaz deja de entrar: a 96 la linea de ayuda del menu se monta sobre la
+  // franja de controles. En una pantalla mas ancha que lcdCols/lcdRowsMin el
+  // piso le gana al tope y el ancho vuelve a subir un poco: es a proposito,
+  // vale mas una interfaz que entra que el ancho clavado.
+  lcdRowsMin:    104,
   // Tope de cuadros: el DMG dibujaba 4194304/70224 = 59.7275 pantallas por
   // segundo, y ese es el techo. Un movil de 120 o 144 Hz sin tope se ve "de
   // mas", como video suave, y no como la maquinita. 0 = sin tope (§2.1).
@@ -543,8 +557,11 @@ function buzz(ms) {
 // El juego mide en UNIDADES DE MUNDO: H vale siempre CFG.baseHeight y W sale
 // de la relacion de aspecto. Wpx/Hpx son los px CSS reales y SC el puente
 // (1 unidad = SC px CSS); nadie mira Wpx/Hpx salvo el transform y la entrada.
-// Gracias a eso PIX es constante: el punto del LCD siempre mide lo mismo y el
-// buffer tiene siempre las 144 filas de la Game Boy.
+// El punto del LCD sale del eje que APRIETE (§21.2): en una pantalla angosta
+// manda el alto y quedan las 144 filas del DMG, y en una ancha manda el tope de
+// columnas. Sin ese tope el ancho se va con la relacion de aspecto —256 puntos
+// en una tele, 368 en un movil con la barra del navegador puesta, contra los 160
+// de la maquinita— y el juego deja de verse pixelado: se ve fino.
 const cv = document.getElementById('screen');
 const scene = document.createElement('canvas');
 const ctx = scene.getContext('2d');
@@ -574,7 +591,11 @@ function resize() {
   H = CFG.baseHeight;                             // el alto del mundo NO cambia nunca
   SC = Hpx / H;                                   // px CSS por unidad de mundo
   W = Wpx / SC;                                   // ... solo cambia cuanto ancho se ve
-  PIX = CFG.lcdRows / CFG.baseHeight;             // constante por construccion
+  // El eje que apriete pone el tamano del punto: el alto en una pantalla
+  // angosta (144 filas), el tope de columnas en una ancha, y el piso de filas
+  // corta al tope cuando la pantalla es tan ancha que ya no entraria el
+  // menu (§21.2).
+  PIX = Math.min(CFG.lcdRows / H, Math.max(CFG.lcdCols / W, CFG.lcdRowsMin / H));
   const bw = Math.max(1, Math.round(W * PIX)), bh = Math.max(1, Math.round(H * PIX));
   for (const c of [scene, trail]) { c.width = bw; c.height = bh; }
   LW = bw;                                        // el hit-test lo necesita antes del primer frame
@@ -1826,7 +1847,18 @@ const VRAM = (() => {
     img = tctx.createImageData(w, h);
   }
   function clear() { buf.fill(0); }
-  function fade(k) { const f = 1 - k; for (let i = 0; i < buf.length; i++) buf[i] *= f; }
+
+  // Estela fantasma. 'k' es lo que se apaga en UN cuadro de 60 Hz y 'dt' lo pasa a
+  // tiempo real, igual que la friccion de la nave. Apagarla por cuadro y no por
+  // tiempo es lo que hacia aparecer rocas de mas: cuando el aparato tironea, la
+  // roca salta el doble o el triple entre cuadro y cuadro pero el fantasma se
+  // apaga lo mismo, asi que las tres generaciones dejan de tocarse y lo que era
+  // un rastro pegado a la roca se lee como dos copias sueltas al lado. Por tiempo,
+  // el cuadro largo apaga de mas y no queda nada suelto que confundir con una roca.
+  function fade(k, dt) {
+    const f = Math.pow(1 - k, dt === undefined ? 1 : dt * 60);
+    for (let i = 0; i < buf.length; i++) buf[i] *= f;
+  }
 
   function plot(x, y, v) {
     if (x < 0 || y < 0 || x >= w || y >= h) return;
@@ -2031,8 +2063,10 @@ function drawPickup(p) {
   }
 }
 
-function renderWorld() {
-  VRAM.fade(CFG.trailFade);                    // estela fantasma de LCD (§2)
+// 'dt' es el del reloj de pared, no el de la partida: el fantasma es del vidrio,
+// asi que dura lo mismo aunque la muerte ponga el juego en camara lenta.
+function renderWorld(dt) {
+  VRAM.fade(CFG.trailFade, dt);                // estela fantasma de LCD (§2)
 
   for (const m of G.meteors) VRAM.polyAt(m.pts, m.x, m.y, m.a, true, 1, 1);
   // La bala es una raya que tumbea sobre su centro y no se apaga de golpe: se
@@ -2085,7 +2119,7 @@ function drawEntryMark(s) {
 const TONE = CFG.gbPalette;                    // 0 negro .. 3 blanco
 const T = CFG.tile;
 let LW = 160;                                  // ancho de la pantalla en pixeles de LCD
-const LH = () => scene.height;                 // alto: siempre CFG.lcdRows
+const LH = () => scene.height;                 // alto: 144 filas, o menos si manda el tope de columnas
 
 function uiBegin() { ctx.setTransform(1, 0, 0, 1, 0, 0); LW = scene.width; }
 function uiEnd()   { ctx.setTransform(PIX, 0, 0, PIX, 0, 0); }
@@ -2099,7 +2133,7 @@ function worldBox(x, y, w, h, label) {
 // se dibuja en el buffer. El juego llega al borde fisico; solo el HUD se aparta, para
 // que el marcador y el boton de sonido no queden debajo del notch o de la isla.
 // El puente CSS -> LCD es PIX/SC: a px CSS constantes, en una pantalla mas alta
-// el recorte se come menos filas del LCD, porque el LCD siempre tiene 144.
+// el recorte se come menos filas del LCD.
 const cssToLcd = () => PIX / SC;
 function safeX() { return Math.round(SAFE.l * cssToLcd()); }
 function safeY() { return Math.round(SAFE.t * cssToLcd()); }
@@ -2118,6 +2152,8 @@ const blink = (ms) => Math.sin(performance.now() / (ms || 250)) > 0;
 const Menu = {
   sel: 0,
   rows: [],
+  layout: null,                                // reparto vertical del menu, lo llena drawMenu
+  scoresShown: 0,                              // filas del top 10 que llegaron a entrar
   _key: '',
   // Si cambio el juego de opciones, la seleccion vuelve arriba.
   offer(rows) {
@@ -2295,14 +2331,18 @@ function menuRow(label, x, y, w, chosen) {
 
 // Cuadro de menu completo: las filas ya vienen alineadas a la rejilla. Publica
 // sus etiquetas en Menu para que la navegacion con los motores sepa que hay.
-function menuBox(rows, cx, top, w) {
+// 'helpLimit' es hasta donde puede llegar la ayuda de navegacion. Por defecto es
+// el borde de abajo, pero el menu le pasa el techo del codigo de enlace: en una
+// pantalla baja (§21.2) la ayuda es lo primero que sobra, porque repite lo que
+// ya dice la franja de controles.
+function menuBox(rows, cx, top, w, helpLimit) {
   const h = 6 + rows.length * 12;
   const x = Math.round(cx - w / 2);
   Menu.offer(rows);
   winBox(x, top, w, h);
   rows.forEach((r, i) => menuRow(r, x + 2, top + 3 + i * 12, w - 4, i === Menu.sel));
   // la ayuda solo si hay donde: en records el cuadro ya va pegado abajo
-  if (rows.length > 1 && top + h + 4 + Font.GH <= LH()) {
+  if (rows.length > 1 && top + h + 4 + Font.GH <= (helpLimit === undefined ? LH() : helpLimit)) {
     text('L/R — MOVE     BOTH — SELECT', cx, top + h + 4, 1, 'center', 1);
   }
   return top + h;
@@ -2448,12 +2488,25 @@ function drawMenu() {
   ctx.fillStyle = TONE[2];
   ctx.fillRect(Math.round(cx - tw / 2), T + Font.GH * ts + 3, tw, 1);
   if (Tint.osd > 0) text('TINT ' + Tint.name, cx, 3 * T + 6, 1, 'center', 2);
-  // Tres filas: el cuadro llega hasta 82 y la ayuda de navegacion hasta 93, asi
-  // que el codigo baja una fila entera para no quedar debajo.
-  menuBox(['PLAY', 'DEMO', 'HIGH SCORES'], cx, 5 * T, 112);
+
+  // Reparto vertical. En 144 filas todo cae donde caia siempre: el cuadro en 5*T,
+  // la ayuda hasta 93 y el codigo en 12*T. Con el tope de columnas la pantalla
+  // puede quedar en 104 filas (§21.2) y entonces no entra todo, asi que el codigo
+  // se ancla arriba de la franja de controles y el cuadro sube detras de el; la
+  // ayuda de navegacion es lo primero que se cae, porque repite lo que ya dice la
+  // franja. El codigo no se toca: sin el no hay con que emparejar el celular.
+  const hintsY = LH() - 2 - Font.GH - safeY();
+  const codeH = T + Font.GH * 2;                 // 'PHONE url' y el codigo debajo
+  const boxH = 6 + 3 * 12;
+  const codeY = Math.min(12 * T, hintsY - 1 - codeH);
+  const titleEnd = T + Font.GH * ts + 5;
+  const help = codeY - 3 - (4 + Font.GH) - boxH >= titleEnd;
+  const boxTop = Math.min(5 * T, codeY - 3 - (help ? 4 + Font.GH : 0) - boxH);
+  Menu.layout = { boxTop, boxH, codeY, codeH, hintsY, help };   // lo publica el dibujo, como las filas
+  menuBox(['PLAY', 'DEMO', 'HIGH SCORES'], cx, boxTop, 112, codeY - 3);
   if (G.attract) text('DEMO', T / 2, T / 2, 1, 'left', 2);
-  else drawLinkCode(cx, 12 * T, 2, 'center');   // el codigo se lee desde el sillon
-  drawControlHints(LH() - 2 - Font.GH - safeY(), 1);
+  else drawLinkCode(cx, codeY, 2, 'center');     // el codigo se lee desde el sillon
+  drawControlHints(hintsY, 1);
   drawMuteButton();
 }
 
@@ -2537,19 +2590,35 @@ function drawScores() {
   const rows = hs.fromRun ? ['PLAY AGAIN', 'BACK'] : ['BACK'];
   const boxTop = LH() - 2 - (6 + rows.length * 12);
   const top = 3 * T + 4, rowH = T;
-  const x0 = Math.round(cx - 76), x1 = Math.round(cx + 76);
   if (!list.length) text('NO SCORES YET', cx, top + 2 * T, 1, 'center', 2);
-  for (let i = 0; i < list.length && top + i * rowH < boxTop - 4; i++) {
-    const e = list[i], y = top + i * rowH;
+
+  // Cuantas filas entran de arriba del cuadro de botones. Con el tope de
+  // columnas (§21.2) la pantalla es ancha y baja, asi que las diez dejan de
+  // entrar en una sola columna — pero lo que falta de alto sobra de ancho, que
+  // es justo lo que hace falta para partirlas en dos. En dos columnas se cae el
+  // nivel, que es lo unico prescindible: la tabla ordena por puntaje, nunca por
+  // nivel (§12.6).
+  const fit = Math.max(1, Math.floor((boxTop - 4 - top) / rowH));
+  const two = fit < list.length;
+  const perCol = Math.min(two ? Math.ceil(list.length / 2) : list.length, fit);
+  const colW = two ? Math.min(92, Math.floor((LW - 12) / 2)) : 152;
+  const x0 = Math.round(cx - (two ? colW + 4 : 76));
+
+  const shown = Math.min(list.length, perCol * (two ? 2 : 1));
+  Menu.scoresShown = shown;                    // lo publica el dibujo, como las filas
+  for (let i = 0; i < shown; i++) {
+    const e = list[i];
+    const cl = x0 + Math.floor(i / perCol) * (colW + 8);
+    const y = top + (i % perCol) * rowH;
     const tone = i < 3 ? 3 : 2;
     // Tus iniciales laten entre los dos tonos claros: en una tabla de tres letras
     // por fila es lo unico que dice cual sos. El latido es entre el 3 y el 2, no
     // entre encendido y apagado, para que se note sin robarle la vista al top 3.
     const name = i === hs.mine ? (blink(420) ? 3 : 2) : tone;
-    text(String(i + 1).padStart(2, ' '), x0, y, 1, 'left', 1);
-    text(e.i, x0 + 18, y, 1, 'left', name);
-    text(String(e.s).padStart(6, '0'), x1 - 30, y, 1, 'right', tone);
-    text('LV ' + e.l, x1, y, 1, 'right', 1);
+    text(String(i + 1).padStart(2, ' '), cl, y, 1, 'left', 1);
+    text(e.i, cl + 18, y, 1, 'left', name);
+    text(String(e.s).padStart(6, '0'), cl + colW - (two ? 0 : 30), y, 1, 'right', tone);
+    if (!two) text('LV ' + e.l, cl + colW, y, 1, 'right', 1);
   }
   menuBox(rows, cx, boxTop, 112);
   drawMuteButton();
@@ -2704,9 +2773,9 @@ function frame(now) {
   ctx.fillRect(0, 0, W, H);
 
   const worldVisible = screen === SCREEN.PLAY || screen === SCREEN.DEMO || (screen === SCREEN.MENU && G.attract);
-  if (worldVisible) renderWorld();
+  if (worldVisible) renderWorld(dt);
   // el campo congelado queda de fondo, apagandose
-  else if (screen === SCREEN.DEAD || screen === SCREEN.INITIALS) VRAM.fade(0.05);
+  else if (screen === SCREEN.DEAD || screen === SCREEN.INITIALS) VRAM.fade(0.05, dt);
   // menu quieto y tabla de records: no hay mundo, solo cielo. Sin este borrado
   // el buffer repetiria para siempre el ultimo cuadro de la demo.
   else VRAM.clear();
