@@ -141,6 +141,22 @@ El elegido se guarda junto con el silencio, así que el vidrio sigue puesto al
 volver a abrir el juego. La lista y la fuerza del filtro salen de `CFG.tints` y
 `CFG.tintSat`; agregar un hue es agregar una línea.
 
+## Estela fantasma
+
+El LCD de la consola tardaba en apagarse, así que todo lo que se movía dejaba
+un rastro. Acá lo hace `CFG.trailFade`: cada cuadro el buffer de intensidad se
+apaga un poco, y como la escena se cuantiza a cuatro tonos, detrás de cada roca
+quedan tres generaciones —blanco, gris claro, gris oscuro— antes de apagarse.
+
+Ese apagado se mide en **tiempo, no en cuadros**. Es lo que evita que la estela
+se vuelva otra cosa: si se apagara por cuadro, un aparato que tironea haría que
+la roca saltase el doble o el triple entre cuadro y cuadro mientras el fantasma
+sigue durando tres cuadros, así que el rastro se estira, las generaciones dejan
+de tocarse y lo que se ve no es una estela sino **dos copias sueltas de la roca
+al lado de la roca**. Por tiempo, el cuadro largo apaga de más y el rastro mide
+siempre lo mismo. `CFG.trailFade` sigue expresado por cuadro de 60 Hz, que es
+donde se ajusta a ojo; `VRAM.fade` lo pasa a tiempo real.
+
 ## Cuadros por segundo
 
 El juego se presenta al ritmo del hardware original: 4194304/70224 = 59,7275
@@ -192,6 +208,7 @@ node dev/input-test.mjs     # que ningún control se quede pegado
 node dev/entry-test.mjs     # que la nave entre bien al empezar cada partida
 node dev/layout-test.mjs    # que el juego ocupe exactamente la pantalla visible
 node dev/demo-test.mjs      # que las dos demos sigan siendo lo que son
+node dev/trail-test.mjs     # que la estela no se estire si el aparato tironea
 npx http-server -p 8080     # y abre /dev/audio-lab.html para escuchar los sonidos
 ```
 

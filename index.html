@@ -69,7 +69,9 @@ const CFG = {
   // del Game Boy: lo unico que importa aca es la luminancia relativa.
   bg:            '#000000',      // el tono mas oscuro de la paleta
   ink:           '#ffffff',      // el trazo pleno es el tono mas claro de la paleta
-  trailFade:     0.42,           // 0..1 por frame. Mas alto = estela mas corta (§2)
+  trailFade:     0.42,           // 0..1 por cuadro de 60 Hz. Mas alto = estela mas corta (§2).
+                                 // Se convierte a tiempo real en VRAM.fade: la estela dura
+                                 // los mismos milisegundos vaya el aparato a los cuadros que vaya.
 
   // --- LCD Game Boy (shader, §21) ---
   // La paleta del hardware son cuatro tonos: blanco, gris claro, gris oscuro y
@@ -1747,7 +1749,18 @@ const VRAM = (() => {
     img = tctx.createImageData(w, h);
   }
   function clear() { buf.fill(0); }
-  function fade(k) { const f = 1 - k; for (let i = 0; i < buf.length; i++) buf[i] *= f; }
+
+  // Estela fantasma. 'k' es lo que se apaga en UN cuadro de 60 Hz y 'dt' lo pasa a
+  // tiempo real, igual que la friccion de la nave. Apagarla por cuadro y no por
+  // tiempo es lo que hacia aparecer rocas de mas: cuando el aparato tironea, la
+  // roca salta el doble o el triple entre cuadro y cuadro pero el fantasma se
+  // apaga lo mismo, asi que las tres generaciones dejan de tocarse y lo que era
+  // un rastro pegado a la roca se lee como dos copias sueltas al lado. Por tiempo,
+  // el cuadro largo apaga de mas y no queda nada suelto que confundir con una roca.
+  function fade(k, dt) {
+    const f = Math.pow(1 - k, dt === undefined ? 1 : dt * 60);
+    for (let i = 0; i < buf.length; i++) buf[i] *= f;
+  }
 
   function plot(x, y, v) {
     if (x < 0 || y < 0 || x >= w || y >= h) return;
@@ -1898,8 +1911,10 @@ function drawPickup(p) {
   }
 }
 
-function renderWorld() {
-  VRAM.fade(CFG.trailFade);                    // estela fantasma de LCD (§2)
+// 'dt' es el del reloj de pared, no el de la partida: el fantasma es del vidrio,
+// asi que dura lo mismo aunque la muerte ponga el juego en camara lenta.
+function renderWorld(dt) {
+  VRAM.fade(CFG.trailFade, dt);                // estela fantasma de LCD (§2)
 
   for (const m of G.meteors) VRAM.polyAt(m.pts, m.x, m.y, m.a, true, 1, 1);
   // La bala es una raya que tumbea sobre su centro y no se apaga de golpe: se
@@ -2535,9 +2550,9 @@ function frame(now) {
   ctx.fillRect(0, 0, W, H);
 
   const worldVisible = screen === SCREEN.PLAY || screen === SCREEN.DEMO || (screen === SCREEN.MENU && G.attract);
-  if (worldVisible) renderWorld();
+  if (worldVisible) renderWorld(dt);
   // el campo congelado queda de fondo, apagandose
-  if (screen === SCREEN.DEAD || screen === SCREEN.INITIALS) VRAM.fade(0.05);
+  if (screen === SCREEN.DEAD || screen === SCREEN.INITIALS) VRAM.fade(0.05, dt);
 
   if (screen !== SCREEN.SCORES && screen !== SCREEN.ROTATE) {
     // el apagado del modo demo y el destello de nivel/dano se aplican sobre la
