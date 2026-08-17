@@ -2431,6 +2431,32 @@ function drawControlHints(y, tone, live) {
 // Codigo de emparejamiento del celular. SOLO en las pantallas quietas: durante
 // la partida no se dibuja nada (§20.2). Cada pantalla elige donde ponerlo, que
 // el sitio libre no es el mismo en todas.
+// En cuantos renglones cae la direccion con el ancho de AHORA. Vive aparte
+// porque drawMenu tiene que repartir el alto antes de dibujar nada: si el
+// reparto supusiera un renglon y la direccion saliera en dos, el codigo se
+// comeria la franja de controles (§21.2).
+//
+// La direccion no entra de una sola linea en cualquier pantalla: con el rotulo
+// delante mide 281 puntos y el LCD no pasa de lcdCols, asi que se cortaba por
+// los dos lados justo el renglon que hay que tipear en el celular — el peor
+// sitio posible para que falte texto. Cuando no entra se parte por el primer
+// '/', que es donde la vista ya corta sola: el dominio arriba y el resto abajo.
+function linkRows(x, align) {
+  const st = Link.status();
+  if (st.error || st.linked || !st.code) return [];
+  // el protocolo y el index.html sobran para tipear a mano en el celular
+  const url = Link.url().replace(/^https?:\/\//, '').replace(/index\.html\?/, '?');
+  const room = align === 'center' ? LW - T : align === 'right' ? x - T / 2 : LW - x - T / 2;
+  const cut = url.indexOf('/');
+  return (Font.width('PHONE ' + url, 1) <= room || cut <= 0)
+    ? ['PHONE ' + url]
+    : ['PHONE ' + url.slice(0, cut), url.slice(cut)];
+}
+
+// Alto del bloque entero: los renglones de la direccion mas el codigo debajo.
+// Con un solo renglon da T + GH*s, que es lo que valia antes de que se partiera.
+const linkCodeH = (rows, s) => (rows - 1) * Font.GH + T + Font.GH * s;
+
 function drawLinkCode(x, y, s, align) {
   const st = Link.status();
   align = align || 'left';
@@ -2440,10 +2466,11 @@ function drawLinkCode(x, y, s, align) {
     return;
   }
   if (!st.code) return;
-  // el protocolo y el index.html sobran para tipear a mano en el celular
-  const url = Link.url().replace(/^https?:\/\//, '').replace(/index\.html\?/, '?');
-  text('PHONE ' + url, x, y, 1, align, 1);
-  text(st.code, x, y + T, s || 1, align, 2);
+
+  const rows = linkRows(x, align);
+  for (let i = 0; i < rows.length; i++) text(rows[i], x, y + i * Font.GH, 1, align, 1);
+  // el codigo baja lo que ocupe la direccion: con un renglon queda donde estaba
+  text(st.code, x, y + (rows.length - 1) * Font.GH + T, s || 1, align, 2);
 }
 
 /* ------------------------------- pantallas ------------------------------ */
@@ -2458,8 +2485,12 @@ const titleScale = () => (Font.width(TITLE, 2) <= LW - 5 * T ? 2 : 1);
 // mientras el secreto siga sin destapar, tampoco responde al toque suelto, solo
 // cuenta. El area se corta antes del boton de sonido, que en pantallas angostas
 // le queda encima.
-function tintBox() {
-  const w = Font.width(TITLE, titleScale());
+// El area del tinte se disimula debajo del titulo, asi que mide lo que el
+// titulo mide DE VERDAD: con el alto apretado drawMenu puede bajarlo a escala 1,
+// y preguntarle a titleScale() dejaria la zona de toque mas ancha que lo que se
+// ve. Sin argumento (el hit-test) usa la escala del ultimo reparto dibujado.
+function tintBox(s) {
+  const w = Font.width(TITLE, s || (Menu.layout && Menu.layout.ts) || titleScale());
   const x = Math.round(LW / 2 - w / 2);
   const right = Math.min(x + w, muteIcon().x - 6);   // el boton de sonido manda, se mueva donde se mueva
   return worldBox(x, 0, Math.max(8, right - x), 3 * T, 'TINT');
@@ -2467,30 +2498,46 @@ function tintBox() {
 
 function drawMenu() {
   const cx = LW / 2;
-  const ts = titleScale(), tw = Font.width(TITLE, ts);
+
+  // Reparto vertical, ANTES de dibujar: el tamano del titulo sale de aca, no al
+  // reves. En 144 filas todo cae donde caia siempre: el cuadro en 5*T, la ayuda
+  // hasta 93 y el codigo en 12*T. Con el tope de columnas la pantalla puede
+  // quedar en 104 filas (§21.2) y ahi no entra todo.
+  //
+  // El orden en que se cede es por utilidad, no por gusto:
+  //   1. la ayuda de navegacion, que repite lo que ya dice la franja de abajo;
+  //   2. el tamano del titulo, que es adorno;
+  //   3. el tamano del codigo, y solo si no queda otra.
+  // La direccion nunca se corta y el codigo nunca se saca: sin esos dos no hay
+  // con que emparejar el celular, que es lo unico que esta pantalla tiene que
+  // resolver.
+  const hintsY = LH() - 2 - Font.GH - safeY();
+  const boxH = 6 + 3 * 12;
+  // La direccion puede caer en dos renglones, y entonces el bloque crece: hay
+  // que repartir con los renglones de verdad, no con uno supuesto.
+  const rows = Math.max(1, linkRows(cx, 'center').length);
+  let ts, codeS, codeH, codeY, help, boxTop, titleEnd;
+  for (const [t, s] of [[titleScale(), 2], [1, 2], [1, 1]]) {
+    ts = t; codeS = s;
+    titleEnd = T + Font.GH * ts + 5;
+    codeH = linkCodeH(rows, s);
+    codeY = Math.min(12 * T, hintsY - 1 - codeH);
+    help = codeY - 3 - (4 + Font.GH) - boxH >= titleEnd;
+    boxTop = Math.min(5 * T, codeY - 3 - (help ? 4 + Font.GH : 0) - boxH);
+    if (boxTop >= titleEnd) break;
+  }
+
+  const tw = Font.width(TITLE, ts);
   text(TITLE, cx, T, ts, 'center', 3);
-  G.buttons.push(tintBox());
+  G.buttons.push(tintBox(ts));
   ctx.fillStyle = TONE[2];
   ctx.fillRect(Math.round(cx - tw / 2), T + Font.GH * ts + 3, tw, 1);
   if (Tint.osd > 0) text('TINT ' + Tint.name, cx, 3 * T + 6, 1, 'center', 2);
 
-  // Reparto vertical. En 144 filas todo cae donde caia siempre: el cuadro en 5*T,
-  // la ayuda hasta 93 y el codigo en 12*T. Con el tope de columnas la pantalla
-  // puede quedar en 104 filas (§21.2) y entonces no entra todo, asi que el codigo
-  // se ancla arriba de la franja de controles y el cuadro sube detras de el; la
-  // ayuda de navegacion es lo primero que se cae, porque repite lo que ya dice la
-  // franja. El codigo no se toca: sin el no hay con que emparejar el celular.
-  const hintsY = LH() - 2 - Font.GH - safeY();
-  const codeH = T + Font.GH * 2;                 // 'PHONE url' y el codigo debajo
-  const boxH = 6 + 3 * 12;
-  const codeY = Math.min(12 * T, hintsY - 1 - codeH);
-  const titleEnd = T + Font.GH * ts + 5;
-  const help = codeY - 3 - (4 + Font.GH) - boxH >= titleEnd;
-  const boxTop = Math.min(5 * T, codeY - 3 - (help ? 4 + Font.GH : 0) - boxH);
-  Menu.layout = { boxTop, boxH, codeY, codeH, hintsY, help };   // lo publica el dibujo, como las filas
+  Menu.layout = { boxTop, boxH, codeY, codeH, hintsY, help, rows, codeS, ts, titleEnd };   // lo publica el dibujo, como las filas
   menuBox(['PLAY', 'DEMO', 'HIGH SCORES'], cx, boxTop, 112, codeY - 3);
   if (G.attract) text('DEMO', T / 2, T / 2, 1, 'left', 2);
-  else drawLinkCode(cx, codeY, 2, 'center');     // el codigo se lee desde el sillon
+  else drawLinkCode(cx, codeY, codeS, 'center'); // el codigo se lee desde el sillon
   drawControlHints(hintsY, 1);
   drawMuteButton();
 }

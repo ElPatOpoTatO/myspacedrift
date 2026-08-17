@@ -4,6 +4,11 @@ Juego web (PWA) jugable desde el navegador.
 
 **Jugar:** https://elpatopotato.github.io/myspacedrift/
 
+![Una partida en marcha](media/gameplay.gif)
+
+*La juega el bot de la demo: el GIF sale de `dev/capture-media.mjs`, que graba
+una partida de verdad.*
+
 - `index.html` — juego completo (canvas + JS)
 - `sw.js` — service worker, cache-first (funciona offline tras la primera carga)
 - `manifest.webmanifest` — instalable como app
@@ -23,6 +28,19 @@ directa y, si el NAT no la deja pasar, sale por un servidor TURN de relevo.
 
 El código de la pantalla no cambia al recargar: queda guardado, así que el
 móvil se reconecta solo cuando la tele vuelve.
+
+La dirección se parte en dos renglones cuando no entra de uno. Con el rótulo
+delante mide 281 puntos y el LCD no pasa de `CFG.lcdCols`, así que se cortaba
+por los dos lados justo el renglón que hay que teclear en el móvil. El corte va
+en la primera `/`: el dominio arriba y el resto abajo, que es donde la vista ya
+corta sola.
+
+Partirla hace crecer el bloque, y en las pantallas que caen al piso de filas el
+alto no sobra, así que `drawMenu` reparte cediendo por utilidad: primero se cae
+la ayuda de navegación (repite lo que dice la franja de abajo), después el
+tamaño del título (es adorno) y solo al final el del código. La dirección no se
+corta nunca y el código no se saca nunca: sin esos dos no hay con qué emparejar
+el móvil, que es lo único que esa pantalla tiene que resolver.
 
 Ya en el mando, se toca:
 
@@ -342,8 +360,26 @@ node dev/layout-test.mjs    # que el juego ocupe exactamente la pantalla visible
 node dev/demo-test.mjs      # que las dos demos sigan siendo lo que son
 node dev/trail-test.mjs     # que la estela no se estire si el aparato tironea
 node dev/lcd-test.mjs       # que la reticula no se desmadre de ancho en ninguna pantalla
+node dev/bot-score.mjs      # cuánto puntúa el bot con dos vidas: la vara de dificultad
 npx http-server -p 8080     # y abre /dev/audio-lab.html para escuchar los sonidos
 ```
 
 Los sonidos se sintetizan en el navegador (nada grabado, ningún archivo); las reglas de
 diseño están en `.claude/skills/lcd-audio/SKILL.md`.
+
+### Material para mostrarlo
+
+`media/` no se precachea: son GIFs y fotos para enseñar el juego fuera, no
+archivos del juego. Se regeneran con:
+
+```sh
+npm i -g ffmpeg-static            # además de playwright
+node dev/capture-media.mjs
+```
+
+El juego no se deja fotografiar a mano —una captura del sistema lo reescala y
+le mete medios tonos que en el LCD no existen—, así que la toma sale del
+navegador y la vuela el mismo bot de la demo.
+
+`marketing/reddit/` tiene el texto para publicarlo, la lista de subreddits y el
+orden en que conviene ir.

@@ -98,6 +98,51 @@ console.log('\nmargenes seguros (notch)');
         `${still.cssW} vs ${still.W}`);
 }
 
+console.log('\nla direccion de emparejamiento entra en la pantalla');
+{
+  // El fallo: 'PHONE elpatopotato.github.io/myspacedrift/?ctrl' mide 281 puntos
+  // y el LCD no pasa de lcdCols, asi que el renglon que hay que tipear en el
+  // celular salia cortado por los dos lados. Ahora se parte en dos, y partirlo
+  // hace crecer el bloque: el reparto vertical de drawMenu tiene que contar con
+  // eso o el codigo se come la franja de controles.
+  //
+  // No se recalcula la formula aca —seria copiarla y se desincronizaria—: se
+  // mira Menu.layout, que es el reparto que el dibujo publica de verdad.
+  for (const [w, h] of [[768, 576], [1024, 576], [1920, 1080], [1366, 768], [1280, 576], [2560, 1080]]) {
+    const p = await (await browser.newContext({ viewport: { width: w, height: h }, hasTouch: true })).newPage();
+    await p.goto(`${base}/index.html`, { waitUntil: 'load' });
+    await p.waitForTimeout(300);
+    const r = await p.evaluate(async () => {
+      Link.url = () => 'https://elpatopotato.github.io/myspacedrift/?ctrl';
+      const st = Link.status(); st.code = Link.code(); st.error = '';
+      quitAttract();                       // con la demo puesta el menu dibuja DEMO y no el codigo
+      await new Promise(requestAnimationFrame);
+      await new Promise(requestAnimationFrame);
+      const rows = linkRows(LW / 2, 'center');
+      return {
+        widest: Math.max(...rows.map(s => Font.width(s, 1))), room: LW - T,
+        // el hit-test llama tintBox() sin argumento; el dibujo le pasa su escala
+        LW, LH: LH(), tintHit: tintBox().w, tintDrawn: tintBox(Menu.layout.ts).w,
+        ...Menu.layout,
+      };
+    });
+    check(`${w}x${h}: la direccion no se corta`, r.widest <= r.room,
+          `${r.widest} de ${r.room} (${r.rows} renglon/es, LCD ${r.LW}x${r.LH})`);
+    check(`${w}x${h}: el codigo no pisa la franja`, r.codeY + r.codeH <= r.hintsY,
+          `codigo hasta ${r.codeY + r.codeH}, franja en ${r.hintsY}`);
+    check(`${w}x${h}: el cuadro no le trepa al titulo`, r.boxTop >= r.titleEnd,
+          `cuadro en ${r.boxTop}, titulo hasta ${r.titleEnd}`);
+    // El codigo es lo ultimo que cede: antes se cae la ayuda y baja el titulo.
+    check(`${w}x${h}: el codigo sigue en grande`, r.codeS === 2,
+          `escala ${r.codeS} (titulo en ${r.ts}, ayuda ${r.help ? 'si' : 'no'})`);
+    // el easter egg se toca sobre el titulo: la zona del hit-test tiene que
+    // medir lo mismo que la que se dibujo, o se toca donde no hay nada
+    check(`${w}x${h}: el area del tinte coincide con el titulo dibujado`,
+          r.tintHit === r.tintDrawn, `hit ${r.tintHit} vs dibujo ${r.tintDrawn}`);
+    await p.context().close();
+  }
+}
+
 check('la pagina no lanzo errores', errors.length === 0, errors.join(' | '));
 
 await browser.close();
