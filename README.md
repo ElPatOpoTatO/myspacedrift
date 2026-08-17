@@ -144,6 +144,46 @@ Las perillas están en `CFG` bajo `--- particion ---`: `splitChanceMin/Max`,
 `splitDecay`, `splitKeep`, `splitAngMin/Max`, `splitMinRadius`, `splitGap` (el
 aire entre las mitades recién cortadas) y `splitSpinGain/Max`.
 
+## Recolectables
+
+Caen dos, y no se distinguen por color: en cuatro tonos el color no existe. El
+problema real es el tamaño. El cuerpo mide **2,3 puntos de LCD de radio**, o sea
+una figura de cinco por cinco, y a esa escala cualquier par de polígonos cae
+sobre los mismos píxeles. Así que se separan por tres ejes a la vez, que son los
+que sobreviven a cinco píxeles:
+
+|        | escudo                 | reparación             |
+| ------ | ---------------------- | ---------------------- |
+| forma  | redonda y dispersa     | recta y plena          |
+| giro   | orbita                 | quieta                 |
+| ondas  | hacia afuera (irradia) | hacia adentro (absorbe)|
+
+El **escudo** es un núcleo con tres satélites dando vueltas: cuatro puntos
+sueltos que giran. Da seis segundos de invulnerabilidad, y mientras dura la nave
+se ve más apagada y con el contorno punteado.
+
+La **reparación** es una cruz gruesa alineada a los ejes —el símbolo de salud de
+toda la vida— y va sin girar a propósito: quieta se distingue más, y además una
+cruz que gira se convierte en una equis cada cuarto de vuelta y deja de ser una
+cruz. Devuelve la vida perdida y el contorno completo del casco. Sólo cae si hay
+algo que reparar.
+
+## Estrellas del fondo
+
+Detrás de todo hay un campo de puntos que titilan. Cada estrella es **un píxel
+del LCD** y nada más: se sortean en coordenadas enteras del buffer, no en
+unidades de mundo, así que miden lo mismo en cualquier pantalla.
+
+El titileo es una sinusoide lenta, de entre 2,5 y 7 segundos, con fase propia
+para que el cielo no lata al unísono. Lo que se ve no es la sinusoide sino los
+escalones que cruza al cuantizar: la estrella se apaga, aparece en gris oscuro,
+sube a gris claro y vuelve. Nunca llega al blanco pleno, que es el tono del
+trazo del juego, y como el buffer mezcla por máximo una estrella no puede tapar
+una roca ni la nave.
+
+Las perillas están en `CFG`: `starDensity` (un punto cada tantos píxeles de
+pantalla), `starPeriodMin/Max` y `starLo/starHi`.
+
 ## Records
 
 El top 10 cuelga del código de la pantalla: cada código guarda su propia
@@ -156,6 +196,12 @@ Esto frena la edición a mano del almacenamiento, no a quien lea el código
 fuente: el juego es estático y la clave viaja en `index.html`, así que un
 top 10 realmente a prueba de trampas necesitaría un servidor que valide las
 partidas.
+
+Al caer a la tabla después de meter las iniciales, **las tuyas laten**: alternan
+entre los dos tonos claros cada segundo y pico. En una tabla donde las diez filas
+son tres letras, es lo único que dice cuál sos. Late el renglón de la partida que
+acabás de jugar y nada más: entrando a HIGH SCORES desde el menú no hay partida
+reciente, así que no late ninguno.
 
 ## Tinte de la pantalla
 
