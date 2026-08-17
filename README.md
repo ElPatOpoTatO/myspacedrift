@@ -141,6 +141,48 @@ El elegido se guarda junto con el silencio, así que el vidrio sigue puesto al
 volver a abrir el juego. La lista y la fuerza del filtro salen de `CFG.tints` y
 `CFG.tintSat`; agregar un hue es agregar una línea.
 
+## Cuántos puntos tiene la pantalla
+
+La Game Boy tenía 160×144 puntos. Acá el ancho no puede ser fijo, porque el
+lienzo llena la pantalla y hay televisores de 16:9, portátiles de 16:10 y
+móviles de 21:9. Lo que sí tiene es **techo y piso**:
+
+- El alto nunca pasa de `CFG.lcdRows` = 144, las filas del hardware.
+- El ancho nunca pasa de `CFG.lcdCols` = 200. Al llegar al tope, el punto se
+  **agranda** en vez de multiplicarse.
+- Las filas nunca bajan de `CFG.lcdRowsMin` = 104, que es donde la interfaz deja
+  de entrar: a 96 la línea de ayuda del menú se monta sobre la franja de
+  controles. En una pantalla más apaisada que `lcdCols / lcdRowsMin` el piso le
+  gana al techo y el ancho vuelve a subir un poco. Es a propósito: vale más una
+  interfaz que entra que el ancho clavado.
+
+O sea que el punto sale del eje que apriete:
+
+```js
+PIX = Math.min(CFG.lcdRows / H, Math.max(CFG.lcdCols / W, CFG.lcdRowsMin / H));
+```
+
+Sin el techo el ancho quedaba a merced de la relación de aspecto —256 puntos en
+un televisor, 312 en un móvil, 368 con la barra del navegador puesta— o sea más
+del doble que la maquinita, y el juego se veía **fino** en vez de pixelado.
+
+| | televisor 16:9 | portátil 16:10 | móvil 844×390 | con barra | 21:9 |
+| --- | --- | --- | --- | --- | --- |
+| antes | 256×144 | 230×144 | 312×144 | 368×144 | 341×144 |
+| ahora | 200×113 | 200×125 | 225×104 | 266×104 | 247×104 |
+
+Bajar las filas obliga a que la interfaz se reacomode, y hay dos lugares donde
+se nota:
+
+- El **menú** ancla el código de emparejamiento encima de la franja de controles
+  y sube el cuadro detrás de él. Lo primero que se cae es la ayuda de navegación
+  (`L/R — MOVE`), que repite lo que ya dice la franja. El código no se toca
+  nunca: sin él no hay con qué emparejar el móvil.
+- El **top 10** pasa a dos columnas cuando las diez filas no entran en una. Lo
+  que falta de alto sobra de ancho, que es justo lo que hace falta para
+  partirlas. En dos columnas se cae el nivel, que es lo único prescindible: la
+  tabla ordena por puntaje, nunca por nivel.
+
 ## Estela fantasma
 
 El LCD de la consola tardaba en apagarse, así que todo lo que se movía dejaba
@@ -209,6 +251,7 @@ node dev/entry-test.mjs     # que la nave entre bien al empezar cada partida
 node dev/layout-test.mjs    # que el juego ocupe exactamente la pantalla visible
 node dev/demo-test.mjs      # que las dos demos sigan siendo lo que son
 node dev/trail-test.mjs     # que la estela no se estire si el aparato tironea
+node dev/lcd-test.mjs       # que la reticula no se desmadre de ancho en ninguna pantalla
 npx http-server -p 8080     # y abre /dev/audio-lab.html para escuchar los sonidos
 ```
 
