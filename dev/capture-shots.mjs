@@ -1,5 +1,5 @@
 /* Cinco fotos mas para la ficha, las que faltaban: media/shot-demo.png,
- * shot-shield.png, shot-split.png, shot-tint.png y shot-phone.png.
+ * shot-pickups.png, shot-split.png, shot-tint.png y shot-phone.png.
  *
  * capture-media.mjs ya saca las cuatro basicas —menu, campo, cartel de nivel y
  * tabla de records— y ademas graba los GIFs, que tarda minutos. Estas van
@@ -7,9 +7,10 @@
  * TIENE y una foto del campo no cuenta. Y al no grabar video, salen en segundos.
  *
  * Igual que alli, no hay montaje: cada foto es el juego corriendo, volado por el
- * mismo bot de la demo. Lo unico que se hace es ponerlo en la situacion —darle
- * el escudo, partir una roca, girar el vidrio— y esperar. La captura del sistema
- * operativo no sirve: reescala el LCD y le mete medios tonos que no existen.
+ * mismo bot de la demo. Lo unico que se hace es ponerlo en la situacion —poner
+ * los dos recolectables, partir una roca, girar el vidrio— y esperar. La captura
+ * del sistema operativo no sirve: reescala el LCD y le mete medios tonos que en
+ * el juego no existen.
  *
  * Lo que aporta cada una:
  *
