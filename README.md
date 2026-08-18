@@ -387,7 +387,9 @@ orden en que conviene ir.
 #### La portada de itch.io
 
 `media/cover.png` mide 630×500, que es lo que muestra la ficha de itch.io, y
-sale de donde sale todo lo demás: la dibuja el juego.
+sale de donde sale todo lo demás: la dibuja el juego. El reparto y el porqué de
+cada número están en `dev/cover-art.mjs`, que es el módulo que comparten las dos
+capturas de abajo.
 
 ```sh
 node dev/capture-cover.mjs        # solo playwright, sin ffmpeg
@@ -407,12 +409,31 @@ Dos números la definen:
 
 La escena no es un cuadro robado a una partida. En una partida la nave está
 donde está, y una portada necesita el nombre con su sitio libre y la nave
-apuntando hacia adentro, así que las piezas se colocan a mano —`COVER.scene`, en
-puntos de LCD— y después se las deja volar unos cuadros para que quede la
-estela. Lo que se ve sigue siendo el juego: la nave sale de `SHIP_SEGS` con sus
-motores encendidos, las rocas de `makeRock`, el polvo de `disintegrate`, el
-escudo de `drawPickup`, el cielo de `Stars`, las letras de `Font`, y los cuatro
-tonos y la retícula del shader LCD. Va en MONO, como el icono.
+apuntando hacia adentro, así que las piezas se colocan a mano —`LAYOUT.scene`, en
+puntos de LCD— y después se las deja volar unos cuadros para que quede la estela.
+Lo que se ve sigue siendo el juego, y siempre a través de sus propias rutinas:
+
+- la nave sale de `SHIP_SEGS`, con los motores encendidos y **girando**;
+- la bala sale con la cuenta de `updatePlay`, así que **tumbea**: el giro tiene
+  su piso en la velocidad de la nave y sale hacia el lado al que la nave estaba
+  girando, que es lo que hace que la raya del disparo se abra en abanico en vez
+  de salir clavada;
+- la roca de arriba a la izquierda **se está partiendo**, y la parte
+  `splitMeteor`: las dos mitades son la misma roca cortada por el medio —los
+  mismos vértices, 40% de masa cada una— abriéndose en abanico, con el 20% que no
+  se lleva ninguna hecho polvo por la línea del corte;
+- y el resto es `makeRock`, `drawPickup`, `Stars`, `Font`, y los cuatro tonos y
+  la retícula del shader. Va en MONO, como el icono.
+
+**La estela se mide en pantalla, no en el mundo.** El fantasma se apaga por
+tiempo, así que mide lo que la pieza haya volado en esos tres cuadros: siempre lo
+mismo en unidades de mundo, pero acá el punto es dos veces y media más grande, o
+sea que en puntos de LCD el rastro salía dos veces y media más largo que jugando
+—la bala arrastraba una raya de veinticinco puntos, o sea un láser, y la nave una
+mancha—. El paso del reloj va corrido por `0,3 / pixel`, y con eso cada pieza
+deja el mismo rastro **en pantalla** que deja jugando. El paso sigue siendo un
+cuadro entero del hardware: partirlo no acorta la estela y sí multiplica las
+llamas del motor, que `drawShip` sortea de nuevo en cada llamada.
 
 Lo único que se deja fuera es el anillo del impacto: dura 0,28 s y crece a 130
 unidades por segundo, así que a este zoom, y con la estela detrás, deja una banda
@@ -420,3 +441,32 @@ gris de cinco puntos de grosor que no se lee como un golpe sino como una luna.
 
 Sale siempre igual —el azar va sembrado y el reloj de las estrellas, clavado—,
 así que regenerarla no ensucia el repositorio con una imagen distinta cada vez.
+
+#### El cartucho
+
+`media/cartridge.png` es una maqueta: el juego es una web y no existe en
+plástico. Sirve para la ficha y para las redes, donde una silueta de cartucho
+dice de un vistazo de qué va esto sin tener que explicarlo.
+
+```sh
+node dev/capture-cartridge.mjs
+```
+
+![El cartucho](media/cartridge.png)
+
+La etiqueta no es un dibujo: es **la misma escena de la portada**, con el
+cristal verde puesto. El color entra por donde entraba en la consola —por el
+vidrio (§21.1)—, así que la escena sigue cuantizada a los mismos cuatro tonos y
+el tinte se multiplica al final, en el shader: es el juego con el `GREEN` que
+está escondido en el menú, no una paleta inventada para la foto. Va pegada 1:1,
+630×500 sin reescalar, porque reescalarla sería volver a inventar medios tonos.
+
+El plástico, en cambio, se dibuja con canvas normal, con degradados y sombras: es
+un objeto físico, no una pantalla, así que no pasa por el LCD ni tiene por qué
+respetar sus cuatro tonos. La proporción es la del cartucho de verdad (57 × 65
+mm) y de ahí salen el bisel de la esquina, las estrías de agarre y el escalón de
+abajo.
+
+No lleva ninguna marca ajena: la forma de un cartucho es la forma de un cartucho,
+pero los logotipos son de quien son. Lo único escrito es el nombre del juego, y
+va dentro de la etiqueta, con la fuente del juego.
