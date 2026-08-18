@@ -1,68 +1,100 @@
-# itch.io page — My Space Drift
+# Página de itch.io — My Space Drift
 
-Free to publish, no karma or reputation gate, and it gives the game a real home you can link to from
-everywhere else. Do this one even if you do nothing else: every other post gets better when there's
-a proper page behind the link.
+Gratis, sin barrera de karma ni de reputación, y le da al juego un sitio propio al que apuntar desde
+todo lo demás. Hacé esta aunque no hagas ninguna otra: cualquier post posterior mejora cuando el
+enlace lleva a una página de verdad y no a una URL pelada.
 
 ---
 
-## Uploading the build
-
-The game is already a static site, so the build is a zip of what's in the repo root. **`index.html`
-must be at the top level of the zip, not inside a folder** — that's the single most common upload
-mistake.
+## 1. El zip
 
 ```sh
-zip -j myspacedrift.zip index.html sw.js manifest.webmanifest icon-180.png icon-192.png icon-512.png icon-maskable-512.png
+zip -j -X myspacedrift.zip index.html sw.js manifest.webmanifest \
+  icon-180.png icon-192.png icon-512.png icon-maskable-512.png
 ```
 
-Seven files, a few hundred KB. The limits are 200 MB per file, 500 MB total and 1000 files, so
-there's nothing to worry about. Don't include `dev/`, `tools/`, `media/` or `marketing/`.
+El `-j` es lo importante: mete los archivos sin carpeta. **`index.html` tiene que quedar en la raíz
+del zip**, no dentro de un directorio — es el error que más se repite al subir HTML5.
 
-Page settings:
-
-- **Kind of project:** HTML
-- Tick **"This file will be played in the browser"** on the uploaded zip
-- **Viewport:** 960 × 540. The game fills whatever container it gets, so this is a starting size
-  rather than a native resolution; it just needs to be landscape.
-- **Tick "Fullscreen button"** — the game is landscape-locked and much better full screen
-- **Mobile friendly:** yes, and set orientation to landscape
-- **Cover image:** `media/cover-630x500.png` (itch wants 630 × 500; the minimum is 315 × 250)
-- **Screenshots:** `media/shot-play.png`, `media/shot-menu.png`, `media/shot-scores.png`, and
-  `media/gameplay.gif` — animated GIFs work as screenshots and are worth including
-- **Pricing:** No payments (or "free, donations accepted" if you want)
-
-**One thing to expect, so it doesn't look like a bug:** itch serves HTML5 games in a sandboxed iframe
-on a separate subdomain. The service worker may not register there, so offline play — the one thing
-`sw.js` provides — may not work on itch. The game itself is unaffected, and so are `localStorage`
-scores and the phone pairing. The GitHub Pages version keeps working offline as normal.
+Son siete archivos y unos 150 KB. Los límites de itch son 1000 archivos, 500 MB en total, 200 MB por
+archivo y rutas de hasta 240 caracteres, así que no hay nada de qué preocuparse. No incluyas `dev/`,
+`tools/`, `media/` ni `marketing/`.
 
 ---
 
-## Title and tagline
+## 2. Los campos, en el orden del formulario
 
-**Title:** My Space Drift
+| Campo | Qué poner |
+|---|---|
+| **Title** | `My Space Drift` |
+| **Project URL** | Se genera solo desde el título; dejalo en `my-space-drift` |
+| **Short description or tagline** | ver abajo |
+| **Classification** | `Games` |
+| **Kind of project** | `HTML` |
+| **Release status** | `In development` — es lo honesto, y baja la vara con la que lo miran |
+| **Pricing** | `No payments`, o `$0 or donate` si querés dejar la puerta abierta |
+| **Uploads** | El zip, y **tildar "This file will be played in the browser"** |
+| **Embed options** | ver §3 |
+| **Description** | ver §5 |
+| **Genre** | `Action` |
+| **Tags** | máximo 10, ver §4 |
+| **App store links** | vacío |
+| **Custom noun** | vacío |
+| **Community** | `Comments` — sin esto no hay dónde te dejen la opinión, que es el motivo de publicarlo |
+| **Visibility & access** | Arranca en `Draft`. Pasalo a `Public` recién cuando lo probaste jugado desde la propia página |
 
-**Tagline** (short description, shows under the title and on the card):
+---
+
+## 3. Los ajustes del embed
+
+Aparecen al marcar el upload como jugable en el navegador.
+
+- **Display mode:** `Embed in page`
+- **Viewport dimensions:** **800 × 600**
+- **Fullscreen button:** sí
+- **Mobile friendly:** sí
+- **Click to play:** sí — evita que el audio arranque solo, que en itch queda mal
+- **Scrollbars:** no
+
+**Por qué 4:3 y no 16:9.** No es estético, es cuántas filas de LCD quedan. Con el tope de columnas
+(`CFG.lcdCols`) y el piso de filas (`CFG.lcdRowsMin`), el tamaño del punto sale del eje que apriete:
+
+| Relación de la ventana | LCD que queda |
+|---|---|
+| hasta 1.389 (4:3 = 1.333) | **192 × 144** — las 144 filas enteras |
+| entre 1.389 y 1.923 | 200 de ancho, entre 144 y 104 filas |
+| 1.923 en adelante | 104 filas, que es el piso |
+
+O sea que 800×600 da el LCD completo de 144 filas, que además es lo más parecido al aparato real
+(160×144), y con esas filas el menú entra entero y muestra la línea de ayuda de navegación. En 16:9
+el LCD queda en 200×113 y esa línea es lo primero que el reparto sacrifica.
+
+---
+
+## 4. Título, tagline y etiquetas
+
+**Title:** `My Space Drift`
+
+**Tagline:**
 
 > Two thrusters, no accelerator, no fire button. The engine never stops and you can never quite stop
 > either.
 
----
-
-## Tags
-
-Keep these lowercase and don't over-tag; itch ranks badly-tagged pages poorly.
+**Tags** (el máximo son 10, en minúscula, sin pasarse — itch posiciona peor las páginas mal
+etiquetadas):
 
 `arcade`, `gameboy`, `retro`, `pixel-art`, `space`, `singleplayer`, `html5`, `score-attack`,
 `asteroids`, `minimalist`
 
-Under **Classification** pick *Game*, under **Genre** pick *Action*, and set **Average session** to
-*A few minutes*, which is true — a run lasts about half a minute.
+**More information** (la metadata de más abajo):
+
+- **Average session:** `A few minutes`
+- **Languages:** `English`
+- **Inputs:** `Keyboard`, `Touchscreen`
 
 ---
 
-## Page description
+## 5. Descripción de la página
 
 > You get a left thruster and a right thruster. That's the whole control scheme.
 >
@@ -100,36 +132,57 @@ Under **Classification** pick *Game*, under **Genre** pick *Action*, and set **A
 
 ---
 
-## First devlog post
+## 6. Imágenes
 
-itch devlogs show up in the feeds of people following the tags, so it's worth posting one rather
-than leaving the page bare.
-
-**Title:** Why this game has no fire button
-
-> The starting question was whether a shooter still works if the player never chooses when to move
-> or when to shoot.
->
-> The engine runs permanently at a fixed thrust toward the nose. You get two thrusters. One turns
-> you. Both together brake — but only to half of maximum speed, never to zero. And any thruster also
-> fires, so aiming and turning are the same act.
->
-> What that does is make every decision a trade. You can't hold still to shoot, and you can't turn
-> away from something without firing into wherever you turned. Friction is low, so your old velocity
-> hangs around after you've changed heading, which is where the name came from.
->
-> The knock-on effects were the interesting part. Menus had to work on two inputs, so one side moves
-> the cursor and both together selects. There's no pause, because there's no button left to put it
-> on. Even the phone controller is just two zones with no labels.
->
-> It's unfinished, and what I'd most like right now is to hear what's missing. Comments are open.
+- **Cover image:** `media/cover-630x500.png`. itch pide 630 × 500; el mínimo es 315 × 250 con
+  relación 315:250.
+- **Screenshots:** entre 3 y 5. Poné `media/gameplay.gif` primero — los GIF animados valen como
+  screenshot y es lo que más muestra —, después `shot-play.png`, `shot-menu.png` y `shot-scores.png`.
 
 ---
 
-## After it's up
+## 7. Dos cosas que van a aparecer y no son fallos
 
-- Put the itch link in the GitHub repo description and the README.
-- Use the itch page as the link in the Reddit posts when you get to them — it carries screenshots and
-  a description that a bare GitHub Pages URL doesn't.
-- itch has its own community forums (Release Announcements, and the boards for feedback). Posting
-  there is free and ungated, and it's the natural next step after the page exists.
+**El service worker.** itch sirve los HTML5 en un iframe de otro subdominio, así que puede no
+registrarse ahí. Lo único que se pierde es jugar sin conexión, que es todo lo que hace `sw.js`. El
+emparejamiento con el móvil y la tabla de récords en `localStorage` funcionan igual, y la versión de
+GitHub Pages sigue andando sin conexión como siempre.
+
+**La declaración de IA.** itch pregunta si el contenido usa IA generativa, y conviene decidirlo a
+conciencia: los gráficos y el sonido **no** son generados por IA — se dibujan y se sintetizan por
+código, y los iconos salen de `tools/make-icons.py` a partir de la geometría de la nave —, pero el
+código sí se escribió con ayuda de IA. El campo pregunta por los *assets*, no por el código.
+
+---
+
+## 8. Que se actualice solo, después
+
+Se puede, con [butler](https://itch.io/docs/butler/), la herramienta oficial de itch, enganchada a
+GitHub Actions para que publique en cada push a `main`.
+
+**El orden importa:** butler sube builds a un proyecto que ya existe — no crea la página ni rellena
+ningún campo. Así que la página se crea a mano una vez, con todo lo de arriba, y recién después se
+automatiza.
+
+Lo que hace falta:
+
+1. Una API key en `itch.io/user/settings/api-keys`.
+2. Pegarla en el repo, en Settings → Secrets and variables → Actions, como `BUTLER_API_KEY`.
+3. Un workflow que arme el zip y corra `butler push <dir> elpatopotato/my-space-drift:html5`.
+
+Las dos primeras se hacen desde el teléfono sin problema. El workflow sube el build y nada más: los
+ajustes de la página —el tilde de "jugable en el navegador", el viewport de 800×600— se ponen una vez
+y quedan.
+
+Vale la pena, porque el juego es un archivo que se toca seguido y sin esto cada cambio significa
+rehacer el zip y volver a subirlo a mano.
+
+---
+
+## 9. Cuando ya esté arriba
+
+- Poné el enlace de itch en la descripción del repo en GitHub y en el README.
+- Usá la página de itch como enlace en los posts de Reddit: lleva capturas y descripción, que una URL
+  de GitHub Pages no tiene.
+- itch tiene sus propios foros (Release Announcements, y los tableros de feedback). Publicar ahí es
+  gratis y sin barrera, y es el paso natural una vez que la página existe.
