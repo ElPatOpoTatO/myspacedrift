@@ -384,6 +384,55 @@ navegador y la vuela el mismo bot de la demo.
 `marketing/reddit/` tiene el texto para publicarlo, la lista de subreddits y el
 orden en que conviene ir.
 
+#### Cinco fotos más
+
+`capture-media.mjs` saca las cuatro básicas —menú, campo, cartel de nivel y tabla
+de records— y además graba los GIFs, que tarda minutos. Las otras cinco van
+aparte, y salen en segundos:
+
+```sh
+node dev/capture-shots.mjs             # las cinco
+node dev/capture-shots.mjs demo split  # o solo algunas
+```
+
+No enseñan pantallas: enseñan lo que el juego **tiene** y una foto del campo no
+cuenta.
+
+| | qué muestra |
+| --- | --- |
+| `shot-demo.png` | la máquina jugando: el cartel que explica y la franja de abajo encendida en el motor que está apretando |
+| `shot-pickups.png` | los dos recolectables juntos, que jugando casi nunca coinciden: la cruz quieta y el núcleo con satélites en órbita |
+| `shot-split.png` | una roca partida en dos, con su polvo y el anillo del golpe |
+| `shot-tint.png` | el menú con el cristal verde: el easter egg del tinte, y la única foto en color |
+| `shot-phone.png` | el celular haciendo de mando, que es la mitad del juego y no sale en ninguna captura de la tele |
+
+Tampoco acá hay montaje: cada foto es el juego corriendo, volado por el mismo bot
+de la demo. Lo único que se hace es ponerlo en la situación —darle los dos
+recolectables, partir una roca, girar el vidrio— y esperar al cuadro que sirve.
+
+Y esperar al cuadro que sirve es literal. El obturador va enganchado a `frame`,
+el bucle del juego: se deja que actualice y **dibuje**, y recién ahí se pregunta
+si el cuadro sirve. Mirándolo desde un `requestAnimationFrame` aparte no alcanza,
+porque el del script y el del juego caen en la misma tanda y el del juego puede
+correr después: lo que se fotografía es entonces el cuadro *siguiente* al que se
+aprobó. Con cosas que duran dos cuadros —el motor que la máquina tiene apretado
+ahora mismo— eso es la diferencia entre la foto que se buscaba y otra: pidiendo
+un solo motor salía la del freno. Y para cortar no basta con pisar
+`requestAnimationFrame`, porque el juego se reagenda en su primera línea y ese
+cuadro ya pedido se dibuja igual encima del bueno; hay una bandera que lo manda
+de vuelta sin dibujar.
+
+Dos fotos se arman con el juego ya congelado, que es cuando se puede elegir
+dónde va cada cosa mirando dónde **no** hay nada: los recolectables buscan el
+hueco más despejado alrededor de la nave (a esta escala miden cinco píxeles, así
+que encima de una roca no se ven) y después se pide un cuadro suelto para
+dibujarlos.
+
+El tinte va en 4:3 y no en 16:9 como `shot-menu.png` por un detalle del reparto
+del alto: el nombre del tinte se dibuja justo encima del cuadro del menú, y en
+una pantalla de 16:9 el cuadro sube hasta taparlo. El color se ve igual en las
+dos; la que explica el easter egg es esta.
+
 #### La portada de itch.io
 
 `media/cover.png` mide 630×500, que es lo que muestra la ficha de itch.io, y
