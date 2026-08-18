@@ -383,3 +383,40 @@ navegador y la vuela el mismo bot de la demo.
 
 `marketing/reddit/` tiene el texto para publicarlo, la lista de subreddits y el
 orden en que conviene ir.
+
+#### La portada de itch.io
+
+`media/cover.png` mide 630×500, que es lo que muestra la ficha de itch.io, y
+sale de donde sale todo lo demás: la dibuja el juego.
+
+```sh
+node dev/capture-cover.mjs        # solo playwright, sin ffmpeg
+```
+
+![La portada de itch.io](media/cover.png)
+
+Dos números la definen:
+
+- **126 × 100 puntos a 5 píxeles el punto** son 630×500 exactos. El punto tiene
+  que caer entero: si no, la retícula cojea —celdas de tres píxeles al lado de
+  celdas de cuatro— y se ensucia justo lo que hace reconocible al juego.
+- **0,8 puntos por unidad de mundo**, contra los 0,3 de la pantalla de verdad. A
+  la escala del juego la nave mide ocho puntos, y en la miniatura de la tienda
+  eso es una mota; acá mide veintidós. Es la misma nave, con el mismo trazo de un
+  punto y la misma física: cambia a qué distancia se la mira, no cómo está hecha.
+
+La escena no es un cuadro robado a una partida. En una partida la nave está
+donde está, y una portada necesita el nombre con su sitio libre y la nave
+apuntando hacia adentro, así que las piezas se colocan a mano —`COVER.scene`, en
+puntos de LCD— y después se las deja volar unos cuadros para que quede la
+estela. Lo que se ve sigue siendo el juego: la nave sale de `SHIP_SEGS` con sus
+motores encendidos, las rocas de `makeRock`, el polvo de `disintegrate`, el
+escudo de `drawPickup`, el cielo de `Stars`, las letras de `Font`, y los cuatro
+tonos y la retícula del shader LCD. Va en MONO, como el icono.
+
+Lo único que se deja fuera es el anillo del impacto: dura 0,28 s y crece a 130
+unidades por segundo, así que a este zoom, y con la estela detrás, deja una banda
+gris de cinco puntos de grosor que no se lee como un golpe sino como una luna.
+
+Sale siempre igual —el azar va sembrado y el reloj de las estrellas, clavado—,
+así que regenerarla no ensucia el repositorio con una imagen distinta cada vez.
