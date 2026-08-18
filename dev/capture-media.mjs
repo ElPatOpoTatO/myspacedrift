@@ -1,5 +1,5 @@
 /* Saca el material para mostrar el juego afuera: un GIF del campo en marcha,
- * otro con los carteles de la demo y unas fotos sueltas.
+ * otro con los carteles de la demo, unas fotos sueltas y la portada de itch.io.
  *
  * Lo que motiva este archivo: el juego no se deja fotografiar a mano. Es un LCD
  * de 144 filas cuantizado a cuatro tonos, asi que una captura de pantalla del
@@ -67,6 +67,11 @@ const run = (args) => {
  * Con capturas sueltas no hay reloj que adivinar. Se piden n cuadros seguidos,
  * se mide cuanto tardaron de verdad y se arma el GIF a esos mismos fps, que es
  * lo que lo deja andando a velocidad real.
+ *
+ * OJO al numero que imprime: los fps salen de lo rapido que la maquina pueda
+ * sacar capturas, asi que con la maquina ocupada baja y el GIF sale a tirones
+ * aunque dure lo mismo. Abajo de ~12 conviene repetir la toma con la maquina
+ * libre en vez de publicar ese GIF.
  */
 async function frames(page, dir, seconds) {
   await rm(dir, { recursive: true, force: true });
@@ -227,6 +232,29 @@ const browser = await chromium.launch();
   });
   await page.waitForTimeout(600);
   await page.screenshot({ path: join(OUT, 'shot-scores.png') });
+}
+
+/* --------- 4) la portada de itch.io: 630x500 exactos --------- */
+{
+  // itch pide 630x500 para la tarjeta del juego. No se recorta una foto de otro
+  // tamano: el juego llena el contenedor que le den, asi que se le da una
+  // ventana de 630x500 y lo que sale ya es la portada, con la reticula bien.
+  const page = await (await browser.newContext({
+    viewport: { width: 630, height: 500 }, hasTouch: true,
+  })).newPage();
+  await page.goto(`${base}/index.html`, { waitUntil: 'load' });
+  await page.waitForTimeout(600);
+  await page.evaluate(() => {
+    Sfx.quiet = true; startGame('play'); G.attract = true;
+    setInterval(() => { if (G.ship) { G.ship.lives = CFG.lives; G.ship.damaged = false; } }, 500);
+  });
+  // Menos puntaje que el GIF: en una tarjeta chica un campo muy poblado se lee
+  // como ruido, pero el nivel 1 con seis rocas se lee como vacio.
+  await page.waitForFunction(() => G.score >= 3500, null, { timeout: 300000, polling: 250 });
+  const st = await page.evaluate(() => ({ score: Math.floor(G.score), level: G.level, rocks: G.meteors.length }));
+  console.log(`  portada score ${st.score}  nivel ${st.level}  rocas ${st.rocks}`);
+  await page.screenshot({ path: join(OUT, 'cover-630x500.png') });
+  await page.context().close();
 }
 
 await browser.close();
