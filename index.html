@@ -197,8 +197,8 @@ const CFG = {
   fairnessTime:   0.5,           // s — guarda de justicia
 
   // --- particion (§6) ---
-  splitChanceMin: 0.05,          // al empezar, uno de cada veinte impactos parte en vez de romper
-  splitChanceMax: 0.10,          // al final de la curva, uno de cada diez
+  splitChanceMin: 0.06,          // al empezar, uno de cada dieciseis impactos parte en vez de romper
+  splitChanceMax: 0.12,          // al final de la curva, uno de cada ocho
   splitDecay:     0.50,          // cada mitad hereda la mitad de la probabilidad de su madre
   splitKeep:      0.40,          // masa que se lleva cada mitad: 40 + 40, y el 20% restante se hace polvo
   splitAngMin:    10,            // grados que se abre cada mitad: minimo, siempre alcanzable
@@ -212,6 +212,9 @@ const CFG = {
   dropChance:    0.15,           // sube de 0.11: con cinco tipos repartiendose la tabla, cada uno cae menos
   pickupScale:   0.6,            // -40% tambien al pickup; perilla aparte por legibilidad
   dropSizeBias:  0.5,            // la roca mas chica del nivel suelta +50%, la mas grande -50%
+  shardDropBonus: 0.20,          // las mitades de una roca partida pagan un 20% mas de pickup: partirla
+                                 // es el tiro dificil, y hasta ahora la unica recompensa era mas blancos.
+                                 // Es plano, no se compone: dos cortes seguidos no pagan 44%
   pickupArm:     0.5,            // s con la nave afuera antes de poder recogerlo. El pickup nace donde
                                  // acabas de tirar, muchas veces encima de la nave, y agarrarlo sin
                                  // haberlo visto es fatal ahora que puede venir infectado
@@ -1265,7 +1268,7 @@ function disintegrate(m, giveDrop) {
       life: rnd(0.4, 0.8), max: 0.8
     });
   }
-  if (giveDrop && Math.random() < dropOdds(m.r)) spawnPickup(m);
+  if (giveDrop && Math.random() < dropOdds(m)) spawnPickup(m);
 }
 
 /* ---------------------------- recolectables (§8) ---------------------------- */
@@ -1327,18 +1330,21 @@ const PICKUPS = {
 // Probabilidad de soltar pickup segun el tamano, relativa al rango del nivel
 // actual: la roca mas chica paga +50%, la mas grande -50%. El promedio no cambia,
 // solo se reparte: tirarle a la grava rinde mas que tirarle a los bloques.
+// Encima, las mitades de una roca partida pagan un extra: partir es el tiro
+// dificil y hasta ahora lo unico que daba era mas blancos que esquivar.
 // Encima va el freno por saturacion: con dos powerups existentes cae la mitad, con
 // tres no cae nada. Eso es lo que sostiene el promedio de uno sin un reloj de
 // aparicion aparte: cuanto mas tenes menos te toca, asi que el que dispara mucho
 // se frena solo en vez de acumular.
-function dropOdds(r) {
+function dropOdds(m) {
   const n = fxCount();
   if (n >= CFG.fxHardCap) return 0;
   const c = curve();
   const lo = c.sizeMin, hi = Math.max(c.sizeMin + 4, c.sizeMax);
-  const t = clamp((r - lo) / Math.max(1, hi - lo), 0, 1);   // 0 = la mas chica, 1 = la mas grande
+  const t = clamp((m.r - lo) / Math.max(1, hi - lo), 0, 1); // 0 = la mas chica, 1 = la mas grande
   const crowd = n >= CFG.crowdedAt ? CFG.crowdedMul : 1;
-  return CFG.dropChance * crowd * (1 + CFG.dropSizeBias - t * 2 * CFG.dropSizeBias);
+  const shard = m.splits ? 1 + CFG.shardDropBonus : 1;      // vino de un corte: paga mas
+  return CFG.dropChance * crowd * shard * (1 + CFG.dropSizeBias - t * 2 * CFG.dropSizeBias);
 }
 
 function spawnPickup(m) {

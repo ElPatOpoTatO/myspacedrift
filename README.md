@@ -144,6 +144,11 @@ Una mitad se puede volver a partir, pero con **la mitad de probabilidad** que su
 madre (`CFG.splitDecay`), así que la cadena se agota sola: un cuarto de roca ya
 parte con la cuarta parte de probabilidad.
 
+Y las mitades **pagan más pickup**: un 20 % por encima de lo que pagaría una roca
+entera del mismo tamaño (`CFG.shardDropBonus`). Partir es el tiro difícil y hasta
+ahora lo único que daba era más blancos que esquivar. El extra es plano, no se
+compone: dos cortes seguidos siguen pagando un 20 %, no un 44 %.
+
 ## Giro de las rocas
 
 Al nacer, cada roca gira poco y al azar: `CFG.meteorRotMax` es un giro de
@@ -217,7 +222,8 @@ o la infección deja de leerse.
 
 ### Cuándo caen
 
-Siguen cayendo sólo al reventar una roca, con `dropChance` sesgada por tamaño.
+Siguen cayendo sólo al reventar una roca, con `dropChance` sesgada por tamaño y
+con el extra del 20 % de las mitades partidas (`shardDropBonus`).
 Encima va un **freno por saturación** que cuenta los *existentes* —los que la
 nave tiene puestos más los que siguen volando—: con dos cae la mitad y con tres
 no cae nada. Es realimentación negativa, y es lo que sostiene el promedio de uno
@@ -231,8 +237,8 @@ una trampa.
 
 Las perillas están en `CFG` bajo `--- pickup ---` y `--- efectos de estilo ---`:
 `dropChance`, `dropSizeBias`, `pickupArm`, `shieldRadius`, `pickupWeights`,
-`fxTime`, `fxBlink`, `infectChance`, `infectTimeMul`, `crowdedAt`, `crowdedMul`,
-`fxHardCap` y `fxSweep`.
+`shardDropBonus`, `fxTime`, `fxBlink`, `infectChance`, `infectTimeMul`,
+`crowdedAt`, `crowdedMul`, `fxHardCap` y `fxSweep`.
 
 ## Estrellas del fondo
 

@@ -127,7 +127,8 @@ console.log('\nfreno por saturacion');
 {
   const odds = await page.evaluate(() => {
     const s = G.ship, out = {};
-    const medir = () => dropOdds((curve().sizeMin + curve().sizeMax) / 2);
+    const media = () => ({ r: (curve().sizeMin + curve().sizeMax) / 2, splits: 0 });
+    const medir = () => dropOdds(media());
     s.fx = {}; s.invuln = 0; G.pickups.length = 0;   out.cero = medir();
     s.fx = { spread: { t: 5, max: 8, bad: false } };  out.uno  = medir();
     s.fx.pierce = { t: 5, max: 8, bad: false };       out.dos  = medir();
@@ -141,6 +142,20 @@ console.log('\nfreno por saturacion');
   check('con dos cae la mitad', Math.abs(odds.dos - odds.uno / 2) < 1e-9, odds.dos.toFixed(4));
   check('con tres no cae nada', odds.tres === 0);
   check('los que vuelan cuentan igual', Math.abs(odds.volando2 - odds.dos) < 1e-9 && odds.volando3 === 0);
+}
+{
+  // las mitades de una roca partida pagan mas que una roca entera del mismo tamano
+  const r = await page.evaluate(() => {
+    G.ship.fx = {}; G.ship.invuln = 0; G.pickups.length = 0;
+    const rad = (curve().sizeMin + curve().sizeMax) / 2;
+    return { entera: dropOdds({ r: rad, splits: 0 }),
+             mitad:  dropOdds({ r: rad, splits: 1 }),
+             cuarto: dropOdds({ r: rad, splits: 2 }) };
+  });
+  check('la mitad de una roca partida paga +20%',
+        Math.abs(r.mitad - r.entera * 1.2) < 1e-9, `${r.entera.toFixed(4)} -> ${r.mitad.toFixed(4)}`);
+  check('y el extra no se compone con cada corte',
+        Math.abs(r.cuarto - r.mitad) < 1e-9, r.cuarto.toFixed(4));
 }
 
 console.log('\nla burbuja');
