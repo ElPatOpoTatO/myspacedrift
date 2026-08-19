@@ -367,6 +367,34 @@ npx http-server -p 8080     # y abre /dev/audio-lab.html para escuchar los sonid
 Los sonidos se sintetizan en el navegador (nada grabado, ningún archivo); las reglas de
 diseño están en `.claude/skills/lcd-audio/SKILL.md`.
 
+### Publicar en itch.io
+
+```sh
+tools/publish-itch.sh --dry-run   # dice qué subiría
+tools/publish-itch.sh             # lo sube
+```
+
+Lo que se sube no es el repositorio: es el juego. La lista sale del propio service
+worker —`FILES` en `sw.js` es, por definición, todo lo que el juego necesita para
+arrancar sin internet— más el `sw.js`, así que no hay dos listas que se puedan
+desincronizar y ni `dev/`, ni `media/`, ni `marketing/`, ni este README viajan a la
+ficha. La versión de la build también sale de ahí: el número de `CACHE`, que es el
+que ya hay que subir cada vez que cambia `index.html`.
+
+Hace falta [butler](https://itch.io/docs/butler/installing.html) y estar autenticado
+(`butler login` una vez, o `BUTLER_API_KEY` si se hace desde CI). El destino se
+cambia sin tocar el archivo: `ITCH_TARGET=usuario/juego tools/publish-itch.sh`.
+
+El texto de la ficha —título, tagline, descripción y las casillas de itch— está en
+`marketing/itch/PAGE.md`, listo para copiar.
+
+**Una cosa que hay que decidir antes de publicar ahí:** el menú anuncia la dirección
+desde la que se está sirviendo el juego, y en itch.io eso es un dominio de CDN dentro
+de un iframe (`v6p9d9t4.ssl.hwcdn.net/html/…`), o sea un renglón que no se puede
+teclear en un celular. Así que, o el emparejamiento no se anuncia en esa ficha, o el
+juego pasa a publicar siempre la dirección pública en vez de la suya (una línea en
+`Link.url()`, subiendo el `CACHE` de `sw.js`).
+
 ### Material para mostrarlo
 
 `media/` no se precachea: son GIFs y fotos para enseñar el juego fuera, no
