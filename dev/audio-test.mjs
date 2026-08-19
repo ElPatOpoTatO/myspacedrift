@@ -26,6 +26,9 @@ const SOUNDS = {
   damage:  0.200,   // 45+45+110
   death:   0.950,   // 90x7 + 320
   level:   0.350,   // 70x3 + 140
+  power:   0.175,   // 35x3 + 70
+  infected:0.285,   // 45x3 + 150
+  pop:     0.095,   // 35 + 60
 };
 const FLOOR_HZ = 380;
 const SR = 44100;

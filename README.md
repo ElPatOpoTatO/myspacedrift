@@ -164,27 +164,75 @@ aire entre las mitades recién cortadas) y `splitSpinGain/Max`.
 
 ## Recolectables
 
-Caen dos, y no se distinguen por color: en cuatro tonos el color no existe. El
+Caen cinco, y no se distinguen por color: en cuatro tonos el color no existe. El
 problema real es el tamaño. El cuerpo mide **2,3 puntos de LCD de radio**, o sea
 una figura de cinco por cinco, y a esa escala cualquier par de polígonos cae
-sobre los mismos píxeles. Así que se separan por tres ejes a la vez, que son los
-que sobreviven a cinco píxeles:
+sobre los mismos píxeles. Así que se separan por varios ejes a la vez, que son
+los que sobreviven a cinco píxeles:
 
-|        | escudo                 | reparación             |
-| ------ | ---------------------- | ---------------------- |
-| forma  | redonda y dispersa     | recta y plena          |
-| giro   | orbita                 | quieta                 |
-| ondas  | hacia afuera (irradia) | hacia adentro (absorbe)|
+|            | forma              | giro           | ondas                   |
+| ---------- | ------------------ | -------------- | ----------------------- |
+| escudo     | redonda y dispersa | orbita         | hacia afuera (irradia)  |
+| reparación | cruz recta y plena | quieta         | hacia adentro (absorbe) |
+| abanico    | tres brazos en V   | abre y cierra  | hacia afuera            |
+| perforante | barra alargada     | sobre su eje   | hacia afuera            |
+| ancla      | cuadrado macizo    | ninguno        | ninguna (late en tamaño)|
 
-El **escudo** es un núcleo con tres satélites dando vueltas: cuatro puntos
-sueltos que giran. Da seis segundos de invulnerabilidad, y mientras dura la nave
-se ve más apagada y con el contorno punteado.
+Los tres nuevos no dan más números: cambian **cómo** se juega. Duran ocho
+segundos, se apilan entre ellos y no se apilan consigo mismos.
+
+El **escudo** es un núcleo con tres satélites dando vueltas. Ya no da
+invulnerabilidad —eso era invisibilidad, no escudo—: pone una **burbuja** que se
+come **un** golpe y revienta, o se agota a los seis segundos. La burbuja se
+dibuja más grande que la nave pero **no agranda el blanco**: lo que choca sigue
+siendo `shipRadius`, porque agrandarlo haría chocar contra rocas que hoy se
+esquivan y eso se lee como «el escudo me mató».
 
 La **reparación** es una cruz gruesa alineada a los ejes —el símbolo de salud de
 toda la vida— y va sin girar a propósito: quieta se distingue más, y además una
 cruz que gira se convierte en una equis cada cuarto de vuelta y deja de ser una
 cruz. Devuelve la vida perdida y el contorno completo del casco. Sólo cae si hay
 algo que reparar.
+
+El **abanico** dispara tres balas en vez de una: cambia puntería por cobertura.
+La **perforante** atraviesa las rocas en lugar de morir en la primera, así que
+premia alinear el tiro. El **ancla** le quita la deriva a la nave: durante ocho
+segundos va exactamente a donde apunta, que en un juego llamado *My Space Drift*
+es el cambio de pilotaje más grande que hay.
+
+### Infectados
+
+Cualquier recolectable puede venir **infectado**: hace lo contrario de lo que
+promete y dura el 70 %. El escudo no protege y te cruza los mandos, la reparación
+no cura y te cruza los mandos, el abanico sortea cada ángulo y te deja sin
+puntería, la perforante apenas saca la bala del morro y el ancla te hace patinar.
+
+Se reconocen por dos marcas a la vez: una **fisura** encima de la figura y, sobre
+todo, que están **completamente detenidos** —no respiran, no giran, no emiten
+ondas—. No se finge un tirón a propósito: el juego tiene tope de cuadros y a
+veces los da de verdad, así que un *glitch* simulado se leería como falla de
+rendimiento y el jugador culparía al juego en vez de leer la señal. De ahí sale
+una regla dura para las cinco figuras: **ninguna limpia puede quedarse quieta**,
+o la infección deja de leerse.
+
+### Cuándo caen
+
+Siguen cayendo sólo al reventar una roca, con `dropChance` sesgada por tamaño.
+Encima va un **freno por saturación** que cuenta los *existentes* —los que la
+nave tiene puestos más los que siguen volando—: con dos cae la mitad y con tres
+no cae nada. Es realimentación negativa, y es lo que sostiene el promedio de uno
+sin necesidad de un reloj de aparición: cuanto más tenés, menos te toca.
+
+Y no se agarran de rebote. El pickup nace **inerte** y sólo se arma tras medio
+segundo con la nave fuera de su radio (`pickupArm`), porque nace justo donde
+acabás de tirar —muchas veces encima de la nave— y agarrarlo sin haberlo mirado
+era gratis mientras los dos eran regalos; con uno de cada seis infectado sería
+una trampa.
+
+Las perillas están en `CFG` bajo `--- pickup ---` y `--- efectos de estilo ---`:
+`dropChance`, `dropSizeBias`, `pickupArm`, `shieldRadius`, `pickupWeights`,
+`fxTime`, `fxBlink`, `infectChance`, `infectTimeMul`, `crowdedAt`, `crowdedMul`,
+`fxHardCap` y `fxSweep`.
 
 ## Estrellas del fondo
 
@@ -360,6 +408,7 @@ node dev/layout-test.mjs    # que el juego ocupe exactamente la pantalla visible
 node dev/demo-test.mjs      # que las dos demos sigan siendo lo que son
 node dev/trail-test.mjs     # que la estela no se estire si el aparato tironea
 node dev/lcd-test.mjs       # que la reticula no se desmadre de ancho en ninguna pantalla
+node dev/pickup-test.mjs    # los cinco recolectables, sus infectados y las reglas que los frenan
 node dev/bot-score.mjs      # cuánto puntúa el bot con dos vidas: la vara de dificultad
 npx http-server -p 8080     # y abre /dev/audio-lab.html para escuchar los sonidos
 ```
