@@ -169,29 +169,28 @@ const browser = await chromium.launch();
 
 /* --------- 3) las fotos sueltas --------- */
 {
-  // El menu va en 16:9 y no en 4:3 como el resto, porque esta pantalla se mira
-  // desde el sillon y esa es la forma que tiene una tele. Ahi la direccion sale
-  // en dos renglones, que es como la va a ver casi todo el mundo.
+  // El menu va en 16:9 y no en 4:3 como el resto, porque estas pantallas se
+  // miran desde el sillon y esa es la forma que tiene una tele. Ahi la direccion
+  // del mando sale en dos renglones, que es como la va a ver casi todo el mundo.
   const page = await (await browser.newContext({
     viewport: { width: 1024, height: VIEW.height }, hasTouch: true,
   })).newPage();
   await page.goto(`${base}/index.html`, { waitUntil: 'load' });
   await page.waitForTimeout(800);
-  // Dos cosas tapan el codigo de emparejamiento en el menu y hay que sacar las dos.
+  // Tres cosas hay que arreglar antes de la foto.
   //
-  // Una: drawMenu pone el rotulo DEMO en ese mismo renglon mientras corre la
-  // demo de fondo, y el codigo solo se dibuja en el 'else'. Con seis segundos
-  // quieto (attractDelay) la demo arranca sola, asi que se la corta y se
-  // refresca lastTouch justo antes de la foto.
+  // Una: con seis segundos quieto (attractDelay) arranca sola la demo de fondo y
+  // el menu queda con el bot volando detras. Se la corta y se refresca lastTouch
+  // justo antes de disparar.
   //
   // Dos: el codigo lo publica el handshake de PeerJS, que necesita unpkg, y una
   // maquina de captura sin salida a internet muestra 'LINK - no internet'. El
   // numero en si es local y ya existe — Link.code() lo genera y lo guarda —, asi
   // que se publica ese: es el mismo que veria el aparato conectado.
   //
-  // Y tres: el menu imprime Link.url(), que sale de location, o sea del
-  // servidor de pruebas. Se apunta a la direccion publica para que la foto diga
-  // lo mismo que dice el juego publicado.
+  // Y tres: la pantalla del mando imprime Link.url(), que sale de location, o
+  // sea del servidor de pruebas. Se apunta a la direccion publica para que la
+  // foto diga lo mismo que dice el juego publicado.
   await page.evaluate((site) => {
     Sfx.quiet = true;
     quitAttract();
@@ -201,9 +200,14 @@ const browser = await chromium.launch();
     if (!st.code) { st.code = Link.code(); st.error = ''; }
   }, SITE);
 
-  // el menu, con el codigo de emparejamiento abajo
+  // el menu
   await page.waitForTimeout(400);
   await page.screenshot({ path: join(OUT, 'shot-menu.png') });
+
+  // la pantalla del mando: la direccion y el codigo para emparejar el celular
+  await page.evaluate(() => { screen = SCREEN.LINK; });
+  await page.waitForTimeout(400);
+  await page.screenshot({ path: join(OUT, 'shot-link.png') });
 
   // el cartel de nivel: hay que esperarlo, dura poco
   await page.evaluate(() => {
