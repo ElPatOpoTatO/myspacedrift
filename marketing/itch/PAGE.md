@@ -73,16 +73,30 @@ dejan mal no se juega.
 | --- | --- |
 | Kind of project | HTML |
 | Uploads | el zip de `butler` marcado **This file will be played in the browser** |
-| Embed | 1024 × 576, *Click to launch in fullscreen*, **Mobile friendly** activado |
+| Embed | 768 × 576, *Click to launch in fullscreen*, **Mobile friendly** activado |
 | Genre | Action |
 | Tags | `arcade`, `asteroids`, `game-boy`, `retro`, `pixel-art`, `one-button`, `high-score`, `html5` |
 | Release status | Prototype / In development |
 | Pricing | Free |
 
-El alto de 576 no es un número redondo por casualidad: son las 144 filas del LCD por
-cuatro, o sea que cada punto del juego cae en cuatro píxeles enteros y la retícula no
-cojea (es la misma medida con la que se sacan las capturas). 1024 de ancho da el 16:9
-con el que el menú se ve como en una tele.
+768 × 576 no es una medida elegida por estética: es la única que le da al juego las
+144 filas enteras **y** el punto en píxeles enteros. El tamaño del punto sale del eje
+que apriete —`PIX = min(lcdRows/H, max(lcdCols/W, lcdRowsMin/H))`— y en una ventana
+ancha manda el tope de columnas, así que el alto del LCD se desploma:
+
+| ventana | LCD que queda | el punto mide |
+| --- | --- | --- |
+| **768 × 576** (4:3) | **192 × 144** | **4 × 4 px exactos** |
+| 800 × 600 (4:3) | 192 × 144 | 4,167 px — la retícula cojea |
+| 1024 × 576 (16:9) | 200 × 113 | 5,12 × 5,097 px — cojea, y faltan 31 filas |
+
+Las 144 filas son las de la Game Boy y son las que hacen que el menú entre entero con
+su línea de ayuda; en 16:9 esa línea es lo primero que el reparto sacrifica (por eso
+`shot-tint.png` va en 4:3). Y 4 píxeles por punto es la misma medida con la que se
+sacan las capturas, así que lo que se ve en la ficha es lo que se ve en las fotos.
+
+> `marketing/itch-io.md` dice 800 × 600. Da las mismas 192 × 144 filas, así que no
+> está mal; 768 × 576 sólo agrega que el punto caiga entero.
 
 ## Antes de publicar: la dirección del mando
 
