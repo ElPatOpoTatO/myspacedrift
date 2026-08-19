@@ -152,7 +152,10 @@ const CFG = {
   brakeFloor:    0.5,            // piso duro: frenando nunca baja de esta fraccion de la maxima
   shipFriction:  0.35,           // fraccion de velocidad perdida por segundo (deriva lateral)
   shipMaxSpeed:  212,            // -10%
-  shipRadius:    11,             // radio de colision
+  shipRadius:    11,             // NO es el hitbox: la nave choca con su contorno (§3.1).
+                                 // Es el radio de guarda que usa la justicia de spawn,
+                                 // y ahi conviene que sobre: mide "cerca de la nave",
+                                 // no "tocando la nave".
 
   // --- entrada de la nave ---
   // Cada partida empieza con la nave llegando de fuera de la pantalla, quieta
@@ -1079,6 +1082,33 @@ const SHIP_SEGS = (() => {
 })();
 const DAMAGED_HIDE = [1, 6]; // segmentos que faltan tras perder la primera vida
 
+// Hitbox de la nave (§3.1). El casco no es redondo: el morro llega a 13,5 y el
+// flanco a 4,74 del centro, asi que un circulo de radio 11 mata por los costados
+// y perdona por la punta. Se colisiona con el contorno de verdad, en dos escalas:
+//   dano   — el contorno un poco encogido, para que matar sea siempre creible
+//   agarre — el contorno pelado, porque encoger ahi solo le saca recolectables
+//            al jugador (chico para morir, honesto para recolectar)
+// Los segmentos que se apagan al danarse (DAMAGED_HIDE) NO agujerean el hitbox:
+// son el indicador de vidas, y una nave dañada mas dificil de matar seria al reves.
+const HULL_SHRINK = 0.88;
+const HULL_DMG  = SHIP_PTS.map(p => ({ x: p.x * HULL_SHRINK, y: p.y * HULL_SHRINK }));
+const HULL_GRAB = SHIP_PTS;
+// Circunradio de cada casco: el filtro barato antes de mirar el poligono.
+const HULL_R_DMG  = Math.max(...HULL_DMG.map(p => Math.hypot(p.x, p.y)));
+const HULL_R_GRAB = Math.max(...HULL_GRAB.map(p => Math.hypot(p.x, p.y)));
+// Pico del latido de drawPickup: breathe = 1 + sin(t*4,2)*0,16, o sea 1,16 arriba.
+// El agarre usa ese maximo y no el valor del frame: asi nunca queda un punto
+// encendido fuera del hitbox, y agarrar no depende de en que parte del latido cayo.
+const PICKUP_BREATHE_MAX = 1.16;
+
+// Buffers de trabajo: el casco se transforma cada frame y no vale la pena
+// asignar sus doce puntos por cada copia de nave (hasta cuatro) y por meteoro.
+const HULL_WORLD = SHIP_PTS.map(() => ({ x: 0, y: 0 }));
+const HULL_LOCAL = SHIP_PTS.map(() => ({ x: 0, y: 0 }));
+
+// Interruptores de desarrollo. Apagados siempre; se prenden desde la consola.
+const DBG = { hitbox: false };
+
 /* ============================ estado ============================ */
 const SCREEN = { MENU: 'MENU', PLAY: 'PLAY', DEMO: 'DEMO', DEAD: 'DEAD', INITIALS: 'INITIALS', SCORES: 'SCORES', ROTATE: 'ROTATE' };
 let screen = SCREEN.MENU;
@@ -1480,10 +1510,15 @@ function updatePlay(dt) {
     const b = G.bullets[i];
     b.x += b.vx * dt; b.y += b.vy * dt; b.a += b.av * dt; b.life -= dt;
     if (b.life <= 0 || b.x < 0 || b.x > W || b.y < 0 || b.y > H) { G.bullets.splice(i, 1); continue; }
+    // La bala pega con la raya entera, no con su centro: es lo que se ve, y un
+    // tiro que visualmente atraviesa la roca tiene que reventarla (§7.2). El
+    // largo se encoge con el apagado, asi que una bala moribunda pega menos.
+    const half = bulletHalf(b);
+    const hx = Math.cos(b.a) * half, hy = Math.sin(b.a) * half;
     for (let j = G.meteors.length - 1; j >= 0; j--) {
       const m = G.meteors[j];
-      if (Math.hypot(b.x - m.x, b.y - m.y) > m.r) continue;
-      if (!pointInRock(b.x, b.y, m)) continue;
+      if (Math.hypot(b.x - m.x, b.y - m.y) > m.r + half) continue;
+      if (!segHitsRock(b.x - hx, b.y - hy, b.x + hx, b.y + hy, m)) continue;
       G.bullets.splice(i, 1);
       hitMeteor(j, b);            // la bala va con ella: su velocidad es la que pone a girar las mitades
       break;
@@ -1495,9 +1530,14 @@ function updatePlay(dt) {
     const p = G.pickups[i];
     p.x += p.vx * dt; p.y += p.vy * dt; p.t += dt;
     if (p.x < -40 || p.x > W + 40 || p.y < -40 || p.y > H + 40) { G.pickups.splice(i, 1); continue; }
+    // Agarrar usa el contorno pelado de la nave, sin encoger: es el unico par
+    // donde achicar el hitbox le juega en contra al jugador, y los recolectables
+    // ya son bastante raros como para ademas perderlos por un flanco (§8.1).
     if (s.alive && !G.entry) {
+      const grab = p.r * PICKUP_BREATHE_MAX;
       for (const cpy of shipCopies(s)) {
-        if (Math.hypot(p.x - cpy.x, p.y - cpy.y) < p.r + CFG.shipRadius) {
+        if (Math.hypot(p.x - cpy.x, p.y - cpy.y) > grab + HULL_R_GRAB) continue;
+        if (polyHitsCircle(hullAt(HULL_GRAB, cpy.x, cpy.y, s.a, HULL_WORLD), p.x, p.y, grab)) {
           G.pickups.splice(i, 1);
           if (p.kind === 'repair') {
             s.lives = Math.min(CFG.lives, s.lives + 1);
@@ -1518,12 +1558,19 @@ function updatePlay(dt) {
   // ---- colision nave / meteoros ----
   // Entrando no choca: seria morir por algo que el jugador no podia esquivar.
   if (s.alive && !G.entry && s.invuln <= 0 && s.grace <= 0) {
+    // Con el casco de verdad en vez de un circulo, el paso por frame (unas 5,8
+    // unidades a 60 Hz) queda por debajo del grosor del casco salvo en la cuña
+    // del morro, y solo si se caen frames: dt esta topeado en 0,05, o sea hasta
+    // 17,4 unidades de un saque. Se acepta porque falla del lado bueno —la nave
+    // se salva de un choque que le tocaba— y porque ese dt suele ser la pestaña
+    // en segundo plano, sin nadie jugando.
     outer:
     for (const cpy of shipCopies(s)) {
+      const hull = hullAt(HULL_DMG, cpy.x, cpy.y, s.a, HULL_WORLD);
       for (let j = G.meteors.length - 1; j >= 0; j--) {
         const m = G.meteors[j];
-        if (Math.hypot(cpy.x - m.x, cpy.y - m.y) > m.r + CFG.shipRadius) continue;
-        if (!circleHitsRock(cpy.x, cpy.y, CFG.shipRadius, m)) continue;
+        if (Math.hypot(cpy.x - m.x, cpy.y - m.y) > m.r + HULL_R_DMG) continue;
+        if (!polyHitsRock(hull, m)) continue;
         damageShip();
         break outer;
       }
@@ -1686,29 +1733,121 @@ function damageShip() {
   }
 }
 
-function pointInRock(px, py, m) {
-  const dx = px - m.x, dy = py - m.y;
-  const ca = Math.cos(-m.a), sa = Math.sin(-m.a);
-  const lx = dx * ca - dy * sa, ly = dx * sa + dy * ca;
+/* ====================== geometria de colision (§3.1) ======================
+   Todo esto trabaja en UNIDADES DE MUNDO, nunca en puntos de LCD. Es lo que
+   hace que el juego se juegue igual en cualquier pantalla: el alto del mundo
+   vale siempre baseHeight, asi que un objeto de 27 unidades mide 27 unidades
+   en todos lados, mientras que un pixel encendido mide entre 3,3 y 4,5 unidades
+   segun lo ancha que sea la ventana. O sea que "los pixeles que se tocan" seria
+   un hitbox distinto en cada monitor.
+   La regla, entonces: el objeto es la LINEA CENTRAL del trazo. El grosor del
+   nib es solo con que gordura lo pinta el LCD, no parte de la cosa. */
+
+// Contorno cerrado por conteo de cruces. Los puntos vienen en el espacio del
+// poligono, asi que quien llame se encarga de traer el punto hasta ahi.
+function pointInPoly(px, py, p) {
   let inside = false;
-  const p = m.pts;
   for (let i = 0, j = p.length - 1; i < p.length; j = i++) {
-    if ((p[i].y > ly) !== (p[j].y > ly) &&
-        lx < (p[j].x - p[i].x) * (ly - p[i].y) / (p[j].y - p[i].y) + p[i].x) inside = !inside;
+    if ((p[i].y > py) !== (p[j].y > py) &&
+        px < (p[j].x - p[i].x) * (py - p[i].y) / (p[j].y - p[i].y) + p[i].x) inside = !inside;
   }
   return inside;
 }
-function circleHitsRock(px, py, r, m) {
-  if (pointInRock(px, py, m)) return true;
-  const dx = px - m.x, dy = py - m.y;
+
+// Del mundo al espacio de la roca: la roca gira, asi que en vez de rotar sus
+// diez o doce vertices se desgira el punto que viene de visita.
+function toRock(x, y, m, out) {
+  const dx = x - m.x, dy = y - m.y;
   const ca = Math.cos(-m.a), sa = Math.sin(-m.a);
-  const lx = dx * ca - dy * sa, ly = dx * sa + dy * ca;
+  out.x = dx * ca - dy * sa;
+  out.y = dx * sa + dy * ca;
+  return out;
+}
+
+// Cruce de dos segmentos por el signo del producto cruzado de cada extremo
+// contra el otro segmento: si los dos pares quedan en lados opuestos, se cortan.
+function segsCross(ax, ay, bx, by, cx, cy, dx, dy) {
+  const d1 = (dx - cx) * (ay - cy) - (dy - cy) * (ax - cx);
+  const d2 = (dx - cx) * (by - cy) - (dy - cy) * (bx - cx);
+  const d3 = (bx - ax) * (cy - ay) - (by - ay) * (cx - ax);
+  const d4 = (bx - ax) * (dy - ay) - (by - ay) * (dx - ax);
+  return ((d1 > 0) !== (d2 > 0)) && ((d3 > 0) !== (d4 > 0));
+}
+
+const _pA = { x: 0, y: 0 }, _pB = { x: 0, y: 0 };
+
+// Lo que le queda de vida a la raya, 1 recien salida y 0 apagada. El apagado
+// arranca lentisimo y se cae al final (k = 1 - t^n), asi que la bala conserva
+// casi todo su largo durante casi todo el vuelo (§7.1).
+function bulletK(b) {
+  return 1 - Math.pow(clamp(1 - b.life / b.max, 0, 1), CFG.bulletFade);
+}
+// Medio largo de la raya. Lo usan el dibujo Y la colision, a proposito: si cada
+// uno se calculara su version, tarde o temprano se separan y la bala pasa a
+// pegar donde no se ve.
+function bulletHalf(b) { return b.len * bulletK(b) * 0.5; }
+
+// La bala contra la roca (§7.2). La bala NO es un punto: es la raya que se ve,
+// centrada en su posicion y girando sobre si misma. Se prueba el segmento
+// entero, que es justo lo que el jugador cree que esta disparando.
+// Un segmento no tiene area, asi que solo hay dos formas de tocar: que alguna
+// punta caiga adentro del contorno, o que la raya cruce alguna arista.
+function segHitsRock(x1, y1, x2, y2, m) {
+  toRock(x1, y1, m, _pA);
+  toRock(x2, y2, m, _pB);
   const p = m.pts;
+  if (pointInPoly(_pA.x, _pA.y, p)) return true;
+  if (pointInPoly(_pB.x, _pB.y, p)) return true;
+  for (let i = 0, j = p.length - 1; i < p.length; j = i++) {
+    if (segsCross(_pA.x, _pA.y, _pB.x, _pB.y, p[j].x, p[j].y, p[i].x, p[i].y)) return true;
+  }
+  return false;
+}
+
+// El casco puesto en el mundo: gira por 'a' y se traslada. La convencion de giro
+// tiene que ser LA MISMA que la de VRAM.polyAt, que es con la que se dibuja; si
+// se separan, el hitbox deja de calzar con lo que se ve y no hay forma de notarlo
+// a ojo. El test dev/collide-test.mjs compara las dos, justamente por eso.
+function hullAt(pts, x, y, a, out) {
+  const ca = Math.cos(a), sa = Math.sin(a);
+  for (let i = 0; i < pts.length; i++) {
+    out[i].x = x + pts[i].x * ca - pts[i].y * sa;
+    out[i].y = y + pts[i].x * sa + pts[i].y * ca;
+  }
+  return out;
+}
+
+// Casco contra roca: dos contornos cerrados. Hay tres formas de solaparse y
+// las tres hacen falta —un vertice del casco adentro de la roca, un vertice de
+// la roca adentro del casco (una piedra chica metida entera), o ninguna de las
+// dos y las aristas cruzandose—. Las dos primeras son baratas y cortan casi siempre.
+function polyHitsRock(hull, m) {
+  const p = m.pts, n = hull.length;
+  for (let i = 0; i < n; i++) {
+    toRock(hull[i].x, hull[i].y, m, HULL_LOCAL[i]);
+    if (pointInPoly(HULL_LOCAL[i].x, HULL_LOCAL[i].y, p)) return true;
+  }
   for (let i = 0; i < p.length; i++) {
-    const a = p[i], b = p[(i + 1) % p.length];
+    if (pointInPoly(p[i].x, p[i].y, HULL_LOCAL)) return true;
+  }
+  for (let i = 0, j = n - 1; i < n; j = i++) {
+    for (let k = 0, l = p.length - 1; k < p.length; l = k++) {
+      if (segsCross(HULL_LOCAL[j].x, HULL_LOCAL[j].y, HULL_LOCAL[i].x, HULL_LOCAL[i].y,
+                    p[l].x, p[l].y, p[k].x, p[k].y)) return true;
+    }
+  }
+  return false;
+}
+
+// Casco contra recolectable: el centro adentro del casco, o alguna arista mas
+// cerca que el radio.
+function polyHitsCircle(hull, cx, cy, r) {
+  if (pointInPoly(cx, cy, hull)) return true;
+  for (let i = 0, j = hull.length - 1; i < hull.length; j = i++) {
+    const a = hull[j], b = hull[i];
     const vx = b.x - a.x, vy = b.y - a.y;
-    const t = clamp(((lx - a.x) * vx + (ly - a.y) * vy) / (vx * vx + vy * vy || 1), 0, 1);
-    if (Math.hypot(lx - (a.x + vx * t), ly - (a.y + vy * t)) < r) return true;
+    const t = clamp(((cx - a.x) * vx + (cy - a.y) * vy) / (vx * vx + vy * vy || 1), 0, 1);
+    if (Math.hypot(cx - (a.x + vx * t), cy - (a.y + vy * t)) < r) return true;
   }
   return false;
 }
@@ -2075,9 +2214,8 @@ function renderWorld(dt) {
   // El tono baja con la misma k, asi que la cuantizacion la lleva de blanco a
   // gris claro, a gris oscuro y a nada, que son los unicos pasos que hay.
   for (const b of G.bullets) {
-    const t = clamp(1 - b.life / b.max, 0, 1);
-    const k = 1 - Math.pow(t, CFG.bulletFade);
-    const half = b.len * k * 0.5;
+    const k = bulletK(b);                        // el mismo largo con el que colisiona
+    const half = bulletHalf(b);
     const dx = Math.cos(b.a) * half, dy = Math.sin(b.a) * half;
     VRAM.line(b.x - dx, b.y - dy, b.x + dx, b.y + dy, k, k > 0.5 ? 2 : 1);
   }
@@ -2092,6 +2230,26 @@ function renderWorld(dt) {
   const s = G.ship;
   if (s && G.entry) drawEntryMark(s);
   if (s && s.alive) for (const cpy of shipCopies(s)) drawShip(s, cpy.x, cpy.y);
+  if (DBG.hitbox) drawHitboxes(s);
+}
+
+// Los hitboxes, apagados salvo que alguien los prenda a mano (DBG.hitbox = true
+// en la consola). No es andamiaje de un rato: que no existiera es la razon por
+// la que la bala fue un punto sin dimension toda la vida del proyecto y nadie
+// lo noto. Se dibuja con las mismas primitivas que el mundo, asi que lo que se
+// ve es literalmente lo que se calcula.
+function drawHitboxes(s) {
+  for (const b of G.bullets) {
+    const half = bulletHalf(b);
+    const dx = Math.cos(b.a) * half, dy = Math.sin(b.a) * half;
+    VRAM.line(b.x - dx, b.y - dy, b.x + dx, b.y + dy, 0.62, 1, 2);
+  }
+  for (const p of G.pickups) VRAM.circle(p.x, p.y, p.r * PICKUP_BREATHE_MAX, 0.34);
+  if (!s || !s.alive) return;
+  for (const cpy of shipCopies(s)) {
+    VRAM.polyAt(HULL_GRAB, cpy.x, cpy.y, s.a, true, 0.34, 1, 3);
+    VRAM.polyAt(HULL_DMG,  cpy.x, cpy.y, s.a, true, 0.62, 1, 2);
+  }
 }
 
 // La escuadra del centro: las cuatro esquinas del sitio adonde el autopiloto

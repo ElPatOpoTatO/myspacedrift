@@ -119,6 +119,51 @@ Las perillas están en `CFG` bajo `--- entrada de la nave ---`: `entryPad`,
 `entryGrace`, `entryMax`, y para lo que se ve, `entryTone`, `entryMark`,
 `readyBlink` y `readyHz`.
 
+## Con qué choca cada cosa
+
+Todo choca con **la forma que se ve**, no con un círculo que la envuelve. Las
+rocas siempre fueron su polígono exacto; la nave y la bala no, y eso producía dos
+mentiras bien visibles.
+
+La bala se probaba como **un punto**, aunque en pantalla es una raya de hasta diez
+unidades que tumbea sobre su centro. Un tiro que visualmente atravesaba la roca no
+le hacía nada. Ahora se prueba la raya entera, con el largo que tiene en ese
+frame: como se va encogiendo al apagarse, una bala moribunda pega menos que una
+recién salida, que es justo lo que se ve.
+
+La nave chocaba con un **círculo de radio 11** contra un casco de 27 × 20,25. Pero
+el casco no es redondo: el morro llega a 13,5 del centro y el flanco a 4,74. O sea
+que moría por rocas que le pasaban por el costado y sobrevivía roces de punta. El
+círculo era el doble de área que el casco de verdad.
+
+Ahora la nave usa su contorno, en dos tamaños distintos a propósito:
+
+|        | forma                     | para qué                        |
+| ------ | ------------------------- | ------------------------------- |
+| daño   | el contorno **encogido**  | morir tiene que ser siempre creíble |
+| agarre | el contorno **pelado**    | recoger no tiene que fallar por un flanco |
+
+Es el único par donde achicar el hitbox le juega **en contra** al jugador, y los
+recolectables ya son bastante raros como para además perderlos rozándolos. Chico
+para morir, honesto para recolectar.
+
+Los segmentos que se apagan al perder una vida no agujerean el hitbox: son el
+indicador de vidas, y una nave dañada más difícil de matar sería al revés de lo
+que cuenta.
+
+**El objeto es la línea central del trazo.** El nib es solo con qué gordura lo
+pinta el LCD, no parte de la cosa — y es lo que hace que el juego se juegue igual
+en cualquier pantalla. El mundo se mide en unidades propias y su alto vale siempre
+`baseHeight`, así que la nave mide 27 unidades en todos lados; un píxel encendido,
+en cambio, mide entre 3,3 y 4,5 unidades según lo ancha que sea la ventana.
+Colisionar "por los píxeles que se tocan" sería un juego distinto en cada monitor.
+`dev/collide-test.mjs` corre los mismos casos en dos pantallas con puntos de LCD
+un 38% distintos y exige el mismo veredicto en todos.
+
+`CFG.shipRadius` sigue existiendo pero **ya no es el hitbox**: es el radio de
+guarda de la justicia de spawn, donde conviene que sobre porque mide "cerca de la
+nave", no "tocando la nave".
+
 ## Partir meteoros
 
 Casi siempre una bala revienta la roca entera, pero entre el 5% y el 10% de los
@@ -185,6 +230,17 @@ toda la vida— y va sin girar a propósito: quieta se distingue más, y además
 cruz que gira se convierte en una equis cada cuarto de vuelta y deja de ser una
 cruz. Devuelve la vida perdida y el contorno completo del casco. Sólo cae si hay
 algo que reparar.
+
+Para agarrarlos, los dos valen **el mismo radio**: el del cuerpo en el pico de su
+latido, contra el contorno pelado de la nave. Que sea el pico y no el valor del
+frame es a propósito —agarrar no puede depender de en qué parte de la respiración
+cayó el cuadro, y así nunca queda un punto encendido fuera del hitbox—. Los
+satélites del escudo y las ondas de los dos **no cuentan**: los satélites orbitan,
+así que incluirlos ataría el agarre a la fase de la órbita y dejaría el escudo más
+fácil de recoger que la reparación sin ninguna razón. Las ondas son decoración.
+
+La cruz tampoco se toma literal: se agarra como un disco, porque si no habría que
+llegarle por el eje X o el Y y no en diagonal.
 
 ## Estrellas del fondo
 
@@ -360,12 +416,24 @@ node dev/layout-test.mjs    # que el juego ocupe exactamente la pantalla visible
 node dev/demo-test.mjs      # que las dos demos sigan siendo lo que son
 node dev/trail-test.mjs     # que la estela no se estire si el aparato tironea
 node dev/lcd-test.mjs       # que la reticula no se desmadre de ancho en ninguna pantalla
+node dev/collide-test.mjs   # que cada cosa choque con la forma que se ve, y en toda pantalla igual
 node dev/bot-score.mjs      # cuánto puntúa el bot con dos vidas: la vara de dificultad
 npx http-server -p 8080     # y abre /dev/audio-lab.html para escuchar los sonidos
 ```
 
 Los sonidos se sintetizan en el navegador (nada grabado, ningún archivo); las reglas de
 diseño están en `.claude/skills/lcd-audio/SKILL.md`.
+
+Para ver los hitboxes, en la consola del juego:
+
+```js
+DBG.hitbox = true      // dibuja el contorno de daño, el de agarre y la raya de cada bala
+```
+
+Se dibuja con las mismas primitivas que el mundo, así que lo que se ve es
+literalmente lo que se calcula. Que esto no existiera es la razón por la que la
+bala fue un punto sin dimensión durante toda la vida del proyecto sin que nadie
+lo notara.
 
 ### Material para mostrarlo
 
