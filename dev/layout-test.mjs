@@ -1,8 +1,14 @@
-/* Comprueba que el juego ocupa exactamente la pantalla visible.
+/* Comprueba que el lienzo es 16:9 clavado, centrado y sin desbordar la pantalla.
  *
- * El fallo que motiva este archivo: instalado como app quedaba un marco arriba y la
+ * El fallo que motivo este archivo: instalado como app quedaba un marco arriba y la
  * parte de abajo cortada. El lienzo se dimensionaba con innerWidth/innerHeight, que
- * incluyen franjas que en pantalla completa no existen.
+ * incluyen franjas que en pantalla completa no existen. De ahi que se comprobara que
+ * el lienzo LLENABA la ventana.
+ *
+ * Ya no la llena, y es a proposito: la relacion de aspecto esta bloqueada en 16:9
+ * para que el juego se vea y se juegue igual en todo aparato, asi que lo que sobra
+ * de ventana queda en negro. Lo que hay que comprobar cambio de forma —16:9, entra,
+ * centrado— pero el fallo de origen sigue cubierto: nada se sale ni se corta.
  *
  *   node dev/layout-test.mjs
  */
@@ -39,28 +45,39 @@ page.on('pageerror', e => { if (!KNOWN_NOISE(e)) errors.push(String(e)); });
 await page.goto(`${base}/index.html`, { waitUntil: 'load' });
 await page.waitForTimeout(400);
 
-console.log('\nel lienzo llena la pantalla');
+console.log('\nel lienzo es 16:9, entra en la pantalla y va centrado');
 {
   const m = await page.evaluate(() => {
     const cv = document.getElementById('screen');
     const vv = window.visualViewport;
-    // Wpx/Hpx son los px CSS reales. W/H son unidades de mundo (el alto vale
-    // siempre CFG.baseHeight), asi que no sirven para comparar contra el viewport.
+    const r = cv.getBoundingClientRect();
+    // Wpx/Hpx son los px CSS de la VENTANA. W/H son unidades de mundo y ahora
+    // tambien son constantes, asi que no sirven para comparar contra el viewport.
     return {
       W: Wpx, H: Hpx, dpr: DPR,
       vw: Math.floor(vv.width), vh: Math.floor(vv.height),
       cssW: parseFloat(cv.style.width), cssH: parseFloat(cv.style.height),
       bufW: cv.width, bufH: cv.height,
+      left: r.left, top: r.top, right: vv.width - r.right, bottom: vv.height - r.bottom,
       scrollH: document.documentElement.scrollHeight,
       innerH: window.innerHeight,
       scrolled: window.scrollY,
     };
   });
-  check('W/H siguen al visualViewport', m.W === m.vw && m.H === m.vh,
-        `W=${m.W} vw=${m.vw} H=${m.H} vh=${m.vh}`);
-  check('el lienzo mide lo mismo en CSS', m.cssW === m.W && m.cssH === m.H,
-        `${m.cssW}x${m.cssH}`);
-  check('el buffer respeta el DPR', m.bufW === Math.floor(m.W * m.dpr) && m.bufH === Math.floor(m.H * m.dpr),
+  check('Wpx/Hpx siguen al visualViewport', m.W === m.vw && m.H === m.vh,
+        `Wpx=${m.W} vw=${m.vw} Hpx=${m.H} vh=${m.vh}`);
+  // Redondear a px enteros deja como mucho medio punto de error en la relacion.
+  check('el lienzo es 16:9', Math.abs(m.cssW / m.cssH - 16 / 9) < 0.01,
+        `${m.cssW}x${m.cssH} = ${(m.cssW / m.cssH).toFixed(4)}`);
+  check('el lienzo entra en la ventana', m.cssW <= m.vw && m.cssH <= m.vh,
+        `${m.cssW}x${m.cssH} en ${m.vw}x${m.vh}`);
+  check('y toca al menos un par de bordes', m.cssW === m.vw || m.cssH === m.vh,
+        `${m.cssW}x${m.cssH} en ${m.vw}x${m.vh}`);   // es el MAYOR 16:9 que entra
+  check('las barras negras son iguales de los dos lados',
+        Math.abs(m.left - m.right) <= 1 && Math.abs(m.top - m.bottom) <= 1,
+        `izq ${m.left.toFixed(1)} der ${m.right.toFixed(1)} arr ${m.top.toFixed(1)} aba ${m.bottom.toFixed(1)}`);
+  check('el buffer respeta el DPR',
+        m.bufW === Math.floor(m.cssW * m.dpr) && m.bufH === Math.floor(m.cssH * m.dpr),
         `${m.bufW}x${m.bufH} dpr=${m.dpr}`);
   check('la pagina no desborda ni se puede desplazar',
         m.scrollH <= m.innerH && m.scrolled === 0, `scrollH=${m.scrollH} innerH=${m.innerH}`);
@@ -79,23 +96,27 @@ console.log('\nmargenes seguros (notch)');
   check('SAFE lee los cuatro margenes',
         safe.t === 20 && safe.r === 44 && safe.b === 30 && safe.l === 44, JSON.stringify(safe));
 
+  // SAFE son los margenes del APARATO, y el lienzo ya no llega a los bordes de la
+  // ventana: del recorte solo tapa lo que le sobre a la barra negra. Lo que el HUD
+  // tiene que esquivar es eso, no el margen entero.
+  const cut = await page.evaluate(() => ({
+    r: Math.max(0, SAFE.r - BAR.x), t: Math.max(0, SAFE.t - BAR.y),
+    barX: BAR.x, barY: BAR.y,
+  }));
+  check('la barra negra ya cubre parte del recorte',
+        cut.r <= safe.r && cut.t <= safe.t,
+        `derecho ${safe.r}->${cut.r.toFixed(1)}, arriba ${safe.t}->${cut.t.toFixed(1)} (barra ${cut.barX.toFixed(1)}x${cut.barY.toFixed(1)})`);
+
   // Se mide el icono, no su caja de toque: la caja se deja mas grande a proposito para
   // que el dedo la acierte, y que ese margen invisible roce el recorte no molesta.
   const hud = await page.evaluate(() => {
     const m = muteIcon();
-    return { iconRight: (LW - (m.x + 8 * m.s)) / PIX, iconTop: m.y / PIX, r: SAFE.r, t: SAFE.t };
+    return { iconRight: (LW - (m.x + 8 * m.s)) / PIX, iconTop: m.y / PIX };
   });
-  check('el icono de mute se aparta del recorte derecho', hud.iconRight >= hud.r,
-        `borde=${hud.iconRight.toFixed(1)} margen=${hud.r}`);
-  check('y del recorte de arriba', hud.iconTop >= hud.t,
-        `borde=${hud.iconTop.toFixed(1)} margen=${hud.t}`);
-
-  const still = await page.evaluate(() => {
-    const cv = document.getElementById('screen');
-    return { cssW: parseFloat(cv.style.width), W: Wpx };
-  });
-  check('el lienzo sigue llegando al borde fisico', still.cssW === still.W,
-        `${still.cssW} vs ${still.W}`);
+  check('el icono de mute se aparta del recorte derecho', hud.iconRight >= cut.r,
+        `borde=${hud.iconRight.toFixed(1)} recorte=${cut.r.toFixed(1)}`);
+  check('y del recorte de arriba', hud.iconTop >= cut.t,
+        `borde=${hud.iconTop.toFixed(1)} recorte=${cut.t.toFixed(1)}`);
 }
 
 console.log('\nlas pantallas quietas entran en el LCD');

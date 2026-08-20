@@ -42,11 +42,11 @@ el LCD no pasa de `CFG.lcdCols`, así que se cortaba por los dos lados justo el
 renglón que hay que teclear en el móvil. El corte va en la primera `/`: el
 dominio arriba y el resto abajo, que es donde la vista ya corta sola.
 
-Partirla hace crecer el bloque, y en las pantallas que caen al piso de filas el
-alto no sobra, así que `drawLink` reparte cediendo por utilidad: primero se
-achica el título (es adorno) y solo al final el código, que es lo único que se
-lee de lejos. La dirección no se corta nunca y el código no se saca nunca: sin
-esos dos la pantalla no sirve para lo único que hace.
+Partirla hace crecer el bloque, y en 108 filas el alto no sobra, así que
+`drawLink` reparte cediendo por utilidad: primero se achica el título (es
+adorno) y solo al final el código, que es lo único que se lee de lejos. La
+dirección no se corta nunca y el código no se saca nunca: sin esos dos la
+pantalla no sirve para lo único que hace.
 
 ### El mando
 
@@ -330,48 +330,87 @@ volver a abrir el juego. La lista y la fuerza del filtro salen de `CFG.tints` y
 
 ## Cuántos puntos tiene la pantalla
 
-La Game Boy tenía 160×144 puntos. Acá el ancho no puede ser fijo, porque el
-lienzo llena la pantalla y hay televisores de 16:9, portátiles de 16:10 y
-móviles de 21:9. Lo que sí tiene es **techo y piso**:
+La Game Boy tenía 160×144 puntos, y eran **siempre esos**. Acá también:
+**192×108, en todo aparato**. La relación de aspecto está bloqueada en 16:9, el
+lienzo se encoge al mayor 16:9 que entre en la ventana y lo que sobra queda en
+negro.
 
-- El alto nunca pasa de `CFG.lcdRows` = 144, las filas del hardware.
-- El ancho nunca pasa de `CFG.lcdCols` = 200. Al llegar al tope, el punto se
-  **agranda** en vez de multiplicarse.
-- Las filas nunca bajan de `CFG.lcdRowsMin` = 104, que es donde la interfaz deja
-  de entrar: a 96 la línea de ayuda del menú se monta sobre la franja de
-  controles. En una pantalla más apaisada que `lcdCols / lcdRowsMin` el piso le
-  gana al techo y el ancho vuelve a subir un poco. Es a propósito: vale más una
-  interfaz que entra que el ancho clavado.
+Antes el lienzo llenaba la pantalla y el mundo se estiraba con ella, así que la
+retícula salía distinta en cada sitio:
 
-O sea que el punto sale del eje que apriete:
+| | tele 16:9 | portátil 16:10 | móvil 844×390 | con barra | 21:9 |
+| --- | --- | --- | --- | --- | --- |
+| retícula antes | 200×113 | 200×125 | 225×104 | 266×104 | 247×104 |
+| ancho de mundo | 853 | 768 | 1039 | 1231 | 1138 |
+| **ahora** | **192×108** | **192×108** | **192×108** | **192×108** | **192×108** |
+
+No era sólo que el punto cambiara de tamaño: cambiaba **cuánto mundo entraba en
+cuadro**. Y como el juego apunta a un número fijo de rocas sin mirar el ancho,
+esas mismas rocas se repartían en más área en un monitor panorámico: el juego
+era *más fácil* en 21:9 que en un portátil. Bloquear el aspecto lo arregla sin
+tocar el spawn.
+
+### Por qué 192×108 y no otra
+
+No se eligió: es la única que cabe. 16:9 exacto pide filas múltiplo de 9, y las
+dos restricciones que ya existían dejan una sola posibilidad:
+
+- **Por arriba, unas 200 columnas.** La consola tenía 160, y pasado ese entorno
+  el juego deja de verse pixelado: se ve **fino**. Sin techo el ancho se iba a
+  256 puntos en una tele y 368 en un móvil con la barra puesta.
+- **Por abajo, 104 filas.** Es donde la interfaz deja de entrar: a 96 la línea
+  de ayuda del menú se monta sobre la franja de controles.
+
+| rejilla | |
+| --- | --- |
+| 176×99 | 99 filas: la interfaz se rompe |
+| **192×108** | **la única que entra** |
+| 208×117 | 208 columnas: se ve fino |
+| 224×126 · 240×135 · 256×144 | más ancho todavía |
+
+Y sale redonda, sin arrastre de redondeo:
 
 ```js
-PIX = Math.min(CFG.lcdRows / H, Math.max(CFG.lcdCols / W, CFG.lcdRowsMin / H));
+PIX = CFG.lcdRows / CFG.baseHeight;   // 108/480 = 0,225
+W   = CFG.lcdCols / PIX;              // 192/0,225 = 853,33
+// W/H = 853,33/480 = 16/9 exacto, y W*PIX da 192 clavado
 ```
 
-Sin el techo el ancho quedaba a merced de la relación de aspecto —256 puntos en
-un televisor, 312 en un móvil, 368 con la barra del navegador puesta— o sea más
-del doble que la maquinita, y el juego se veía **fino** en vez de pixelado.
+### Las barras
 
-| | televisor 16:9 | portátil 16:10 | móvil 844×390 | con barra | 21:9 |
-| --- | --- | --- | --- | --- | --- |
-| antes | 256×144 | 230×144 | 312×144 | 368×144 | 341×144 |
-| ahora | 200×113 | 200×125 | 225×104 | 266×104 | 247×104 |
+Lo que sobra de ventana queda negro. Cuánto sobra depende del aparato: nada en
+una tele 16:9, un 10% del alto en un portátil 16:10, un 18% del ancho en un
+móvil de 21,6:9 y un 25% en una ultrapanorámica o en un 4:3.
 
-Bajar las filas obliga a que la interfaz se reacomode, y hay dos lugares donde
-se nota:
+En la práctica **no se ven como barras**, porque el fondo del juego ya es negro:
+lo que se nota es que el cuadro es un poco más chico y va centrado. Es lo mismo
+que hace cualquier aparato de resolución fija, y encaja con la ficción: el
+vidrio no llega hasta el borde de la carcasa.
+
+Dos cosas se acomodan a que el lienzo ya no toque los bordes físicos:
+
+- **Los márgenes seguros** (notch, isla, barra de gestos) son de la *ventana*, y
+  del recorte sólo tapa lo que le sobre a la barra negra. `safeCut()` resta la
+  barra, así que el HUD recupera sitio justo en los aparatos donde más escasea.
+- **La pantalla de rotar** se dispara con los píxeles del aparato, no con las
+  medidas del mundo. Con el mundo clavado en 16:9 el alto ya nunca supera al
+  ancho, así que comparándolos la pantalla habría quedado inalcanzable y un
+  móvil en vertical mostraría una franja diminuta en vez de pedir que lo giren.
+
+### La interfaz reparte el alto igual
+
+Con 108 filas fijas ya no hay filas que negociar, pero el reparto sigue puesto:
+se degenera solo a una única respuesta, y mantenerlo significa que la interfaz
+sigue entrando si algún día la rejilla cambia.
 
 - El **menú**, el **`GAME OVER`** y la pantalla del mando reparten el alto antes
   de dibujar, en vez de anclar cada cosa a una fila fija de la rejilla: el
   bloque de abajo se apoya sobre la franja de controles y el resto se acomoda en
   lo que sobra. Lo primero que se cae es la ayuda de navegación (`L/R — MOVE`),
-  que repite lo que ya dice la franja; después el tamaño del título. Con filas
-  fijas, en 104 filas el cuadro de opciones del `GAME OVER` salía escrito encima
-  de `BRAKE`.
-- El **top 10** pasa a dos columnas cuando las diez filas no entran en una. Lo
-  que falta de alto sobra de ancho, que es justo lo que hace falta para
-  partirlas. En dos columnas se cae el nivel, que es lo único prescindible: la
-  tabla ordena por puntaje, nunca por nivel.
+  que repite lo que ya dice la franja; después el tamaño del título.
+- El **top 10** pasa a dos columnas cuando las diez filas no entran en una. En
+  dos columnas se cae el nivel, que es lo único prescindible: la tabla ordena
+  por puntaje, nunca por nivel.
 
 ## Estela fantasma
 
