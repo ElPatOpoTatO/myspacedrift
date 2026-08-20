@@ -683,8 +683,8 @@ Dos números la definen:
 - **126 × 100 puntos a 5 píxeles el punto** son 630×500 exactos. El punto tiene
   que caer entero: si no, la retícula cojea —celdas de tres píxeles al lado de
   celdas de cuatro— y se ensucia justo lo que hace reconocible al juego.
-- **0,8 puntos por unidad de mundo**, contra los 0,3 de la pantalla de verdad. A
-  la escala del juego la nave mide ocho puntos, y en la miniatura de la tienda
+- **0,8 puntos por unidad de mundo**, contra los 0,225 de la pantalla de verdad.
+  A la escala del juego la nave mide seis puntos, y en la miniatura de la tienda
   eso es una mota; acá mide veintidós. Es la misma nave, con el mismo trazo de un
   punto y la misma física: cambia a qué distancia se la mira, no cómo está hecha.
 
@@ -708,11 +708,12 @@ Lo que se ve sigue siendo el juego, y siempre a través de sus propias rutinas:
 
 **La estela se mide en pantalla, no en el mundo.** El fantasma se apaga por
 tiempo, así que mide lo que la pieza haya volado en esos tres cuadros: siempre lo
-mismo en unidades de mundo, pero acá el punto es dos veces y media más grande, o
-sea que en puntos de LCD el rastro salía dos veces y media más largo que jugando
-—la bala arrastraba una raya de veinticinco puntos, o sea un láser, y la nave una
-mancha—. El paso del reloj va corrido por `0,3 / pixel`, y con eso cada pieza
-deja el mismo rastro **en pantalla** que deja jugando. El paso sigue siendo un
+mismo en unidades de mundo, pero acá el punto es más de tres veces más grande, o
+sea que en puntos de LCD el rastro salía más de tres veces más largo que jugando
+—la bala arrastraba una raya larguísima, o sea un láser, y la nave una mancha—. El
+paso del reloj va corrido por `PIX / pixel`, donde `PIX` sale de `CFG.lcdRows`, así
+que la corrección se ajusta sola cuando cambia la retícula del juego; y con eso
+cada pieza deja el mismo rastro **en pantalla** que deja jugando. El paso sigue siendo un
 cuadro entero del hardware: partirlo no acorta la estela y sí multiplica las
 llamas del motor, que `drawShip` sortea de nuevo en cada llamada.
 

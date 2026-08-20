@@ -22,11 +22,11 @@
  *     reticula cojea (unas celdas de 3 pixeles y otras de 4) y la imagen se ve
  *     sucia justo en lo que la hace reconocible.
  *
- *   - El juego dibuja a 0.3 puntos por unidad de mundo (144 filas sobre las 480
- *     de alto que mide el mundo) y ahi la nave son ocho puntos. En la miniatura
- *     de la tienda eso es una mota. La portada mira el mismo campo mas de cerca
- *     —0.8— y la nave pasa a veintidos puntos: la misma nave, el mismo trazo de
- *     un punto, la misma fisica; solo cambia a que distancia se la mira.
+ *   - El juego dibuja a 0.225 puntos por unidad de mundo (108 filas sobre las
+ *     480 de alto que mide el mundo) y ahi la nave son seis puntos. En la
+ *     miniatura de la tienda eso es una mota. La portada mira el mismo campo mas
+ *     de cerca —0.8— y la nave pasa a veintidos puntos: la misma nave, el mismo
+ *     trazo de un punto, la misma fisica; solo cambia a que distancia se la mira.
  *
  * La escena no es un cuadro robado a una partida: en una partida la nave esta
  * donde esta, y una portada necesita el nombre con su sitio y la nave apuntando
@@ -216,11 +216,14 @@ export function compose(C) {
   //
   // Ese corrimiento es lo que hace que la portada se parezca a jugar. La estela
   // se apaga por tiempo, o sea que mide lo que la pieza HAYA VOLADO en esos tres
-  // cuadros: en unidades de mundo siempre lo mismo, pero en puntos de LCD, el
-  // doble y medio aca que en la pantalla real, porque aca el punto es dos veces
-  // y media mas grande. Con el reloj sin corregir la bala arrastraba una raya de
-  // veinticinco puntos —un laser— y la nave, una mancha. Corriendo el paso por
-  // 0.3/pixel, cada pieza deja el mismo rastro EN PANTALLA que deja jugando.
+  // cuadros: en unidades de mundo siempre lo mismo, pero en puntos de LCD sale
+  // mas larga aca, porque aca el punto es mas grande. Con el reloj sin corregir
+  // la bala arrastraba un laser y la nave, una mancha.
+  //
+  // El factor no va escrito a mano: es PIX/pixel, y PIX se lee de CFG.lcdRows, la
+  // reticula del juego. Asi la correccion se ajusta sola cuando esa reticula
+  // cambia —y cambio: de 144 filas a 108, o sea de 0.3 a 0.225 puntos por unidad
+  // de mundo—, en vez de quedar como un numero suelto que nadie recuerda revisar.
   const DT = (1 / 60) * (CFG.lcdRows / CFG.baseHeight) / C.pixel;
   const STEPS = 4;
   const step = (dt) => {
