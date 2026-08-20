@@ -111,6 +111,75 @@ console.log('\nmultitoque');
   check('levantarlos suelta los dos', (await state()).n === 0);
 }
 
+console.log('\nel mando del celular');
+{
+  // El mando es DOM, no canvas: dos botones grandes que se encienden mientras el
+  // dedo los aprieta. Se vigila lo mismo que en la pantalla —que nada quede
+  // pegado— y ademas que la luz diga la verdad, porque es la unica respuesta que
+  // tiene quien sostiene el celular: la partida se ve en la otra pantalla.
+  const ctx = await browser.newContext({ viewport: { width: 390, height: 800 }, hasTouch: true, isMobile: true });
+  await ctx.addInitScript(() => {
+    // PeerJS sale a internet. Aca solo hace falta que el enlace se abra y que se
+    // pueda leer lo que el mando manda del otro lado.
+    window.__sent = [];
+    window.Peer = class {
+      constructor() { this._h = {}; setTimeout(() => this._h.open && this._h.open('x'), 5); }
+      on(k, f) { this._h[k] = f; }
+      connect() {
+        const c = { open: false, _h: {}, on(k, f) { this._h[k] = f; },
+                    send(m) { window.__sent.push(m); }, close() {} };
+        setTimeout(() => { c.open = true; c._h.open && c._h.open(); }, 10);
+        return c;
+      }
+      destroy() {}
+    };
+  });
+  const ph = await ctx.newPage();
+  ph.on('pageerror', e => { if (!KNOWN_NOISE(e)) errors.push('mando: ' + e); });
+  await ph.goto(`${base}/index.html?ctrl`, { waitUntil: 'load' });
+  await ph.fill('#ctrl-code', '123456');            // seis digitos: conecta solo
+  await ph.waitForTimeout(300);
+
+  const pcdp = await ctx.newCDPSession(ph);
+  const fingers = (...ps) => pcdp.send('Input.dispatchTouchEvent', {
+    type: ps.length ? 'touchStart' : 'touchEnd',
+    touchPoints: ps.map(([x, y], i) => ({ x, y, id: i })),
+  });
+  const pad = () => ph.evaluate(() => ({
+    lit: [...document.querySelectorAll('#ctrl-pad .btn')].map(b => b.classList.contains('on')),
+    last: window.__sent[window.__sent.length - 1],
+    visible: !document.getElementById('ctrl-pad').hidden,
+  }));
+
+  check('conectado, los botones reemplazan al teclado numerico', (await pad()).visible);
+
+  await fingers([90, 500]);
+  let m = await pad();
+  check('apretar la izquierda enciende la izquierda', m.lit[0] && !m.lit[1], JSON.stringify(m.lit));
+  check('y manda un dedo en esa mitad de la pantalla',
+        m.last.t === 'p' && m.last.a.length === 1 && m.last.a[0][1] < 0.5, JSON.stringify(m.last));
+
+  await fingers([90, 500], [300, 500]);
+  m = await pad();
+  check('los dos juntos son el freno', m.lit[0] && m.lit[1] && m.last.a.length === 2, JSON.stringify(m.last));
+
+  await fingers();
+  m = await pad();
+  check('soltar apaga las dos luces', !m.lit[0] && !m.lit[1], JSON.stringify(m.lit));
+  check('y le avisa a la pantalla que no queda ningun dedo', m.last.a.length === 0, JSON.stringify(m.last));
+
+  // el fallo que motiva este archivo, visto desde el mando: la app se va a
+  // segundo plano con el dedo apoyado y nadie manda el pointerup
+  await fingers([90, 500]);
+  await ph.evaluate(() => {
+    Object.defineProperty(document, 'hidden', { value: true, configurable: true });
+    document.dispatchEvent(new Event('visibilitychange'));
+  });
+  m = await pad();
+  check('irse a segundo plano suelta el boton', !m.lit[0] && m.last.a.length === 0, JSON.stringify(m));
+  await ctx.close();
+}
+
 check('la pagina no lanzo errores', errors.length === 0, errors.join(' | '));
 
 await browser.close();
