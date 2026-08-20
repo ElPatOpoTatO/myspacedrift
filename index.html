@@ -158,14 +158,16 @@ const CFG = {
   shipLen:       27,             // largo total (proporcion 3:4 con el ancho)
   shipWid:       20.25,
   shipRot:       3.5,            // rad/s de giro sostenido (tope)
-  rotInertia:    0.10,           // la inercia del giro es el 10% de la inercia lineal (velocidad angular de crucero)
   rotInertia:    0.10,           // inercia del giro = 10% de la inercia de traslacion
   cruiseThrust:  210,            // px/s^2 — empuje constante hacia adelante, siempre encendido
   brakeDecel:    150,            // px/s^2 de freno con ambos motores
   brakeFloor:    0.5,            // piso duro: frenando nunca baja de esta fraccion de la maxima
   shipFriction:  0.35,           // fraccion de velocidad perdida por segundo (deriva lateral)
   shipMaxSpeed:  212,            // -10%
-  shipRadius:    11,             // radio de colision
+  shipRadius:    11,             // NO es el hitbox: la nave choca con su contorno (§3.1).
+                                 // Es el radio de guarda que usa la justicia de spawn,
+                                 // y ahi conviene que sobre: mide "cerca de la nave",
+                                 // no "tocando la nave".
 
   // --- entrada de la nave ---
   // Cada partida empieza con la nave llegando de fuera de la pantalla, quieta
@@ -211,8 +213,8 @@ const CFG = {
   fairnessTime:   0.5,           // s — guarda de justicia
 
   // --- particion (§6) ---
-  splitChanceMin: 0.05,          // al empezar, uno de cada veinte impactos parte en vez de romper
-  splitChanceMax: 0.10,          // al final de la curva, uno de cada diez
+  splitChanceMin: 0.06,          // al empezar, uno de cada dieciseis impactos parte en vez de romper
+  splitChanceMax: 0.12,          // al final de la curva, uno de cada ocho
   splitDecay:     0.50,          // cada mitad hereda la mitad de la probabilidad de su madre
   splitKeep:      0.40,          // masa que se lleva cada mitad: 40 + 40, y el 20% restante se hace polvo
   splitAngMin:    10,            // grados que se abre cada mitad: minimo, siempre alcanzable
@@ -223,12 +225,42 @@ const CFG = {
   splitSpinMax:   6.0,           // rad/s — tope del giro tras el impacto
 
   // --- pickup (§8) ---
-  dropChance:    0.11,
+  dropChance:    0.15,           // sube de 0.11: con cinco tipos repartiendose la tabla, cada uno cae menos
   pickupScale:   0.6,            // -40% tambien al pickup; perilla aparte por legibilidad
   dropSizeBias:  0.5,            // la roca mas chica del nivel suelta +50%, la mas grande -50%
-  repairChance:  0.20,           // de cada 10 pickups, 2 son de reparacion
+  shardDropBonus: 0.20,          // las mitades de una roca partida pagan un 20% mas de pickup: partirla
+                                 // es el tiro dificil, y hasta ahora la unica recompensa era mas blancos.
+                                 // Es plano, no se compone: dos cortes seguidos no pagan 44%
+  pickupArm:     0.5,            // s con la nave afuera antes de poder recogerlo. El pickup nace donde
+                                 // acabas de tirar, muchas veces encima de la nave, y agarrarlo sin
+                                 // haberlo visto es fatal ahora que puede venir infectado
   invulnTime:    6.0,
   invulnBlink:   2.0,
+  shieldRadius:  16,             // px — la burbuja se dibuja mas grande que la nave pero NO agranda el
+                                 // blanco: lo que choca sigue siendo shipRadius. Agrandarlo haria chocar
+                                 // contra rocas que hoy se esquivan, y eso se lee como "el escudo me mato"
+  // Peso relativo de cada recolectable. No son probabilidades sueltas: se sortea
+  // uno de los disponibles en proporcion a su peso, asi que subir uno baja los demas.
+  pickupWeights: { shield: 26, repair: 16, spread: 20, pierce: 20, anchor: 18 },
+
+  // --- efectos de estilo (§8) ---
+  fxTime:        8.0,            // s que dura un powerup de estilo
+  fxBlink:       2.0,            // s finales en que su elemento parpadea: el mismo aviso que ya da el escudo
+  infectChance:  0.16,           // de cada seis pickups, uno viene infectado y hace lo contrario
+  infectTimeMul: 0.70,           // el infectado dura menos: tiene que doler sin llegar a matar
+  crowdedAt:     2,              // existentes (activos + volando) desde los que la caida se frena
+  crowdedMul:    0.5,            // cuanto se frena ahi. Es realimentacion negativa: el que satura se corta solo
+  fxHardCap:     3,              // existentes con los que ya no cae nada
+  fxSweep:       10.0,           // s entre barridos de seguridad; por cuadro seria gravar el bucle de balde
+  spreadAngle:   0.26,           // rad que se abre cada bala lateral del abanico
+  maxBulletsSpread: 6,           // tope de balas mientras dura el abanico: el doble del normal, no el triple
+  pierceLifeMul: 0.25,           // el pierce infectado apenas saca la bala del morro
+  pierceCool:    0.06,           // s de sordera de la bala perforante tras un impacto. Sin esto revienta
+                                 // en el mismo cuadro las dos mitades que acaba de crear la particion
+  anchorFriction: 0.90,          // ANCHOR limpio: la nave se clava y va a donde apunta
+  anchorRotMul:   0.25,          // y el giro deja de arrastrarse
+  slipFriction:   0.06,          // ANCHOR infectado: patina como sobre hielo
+  slipRotMul:     2.2,           // y el morro obedece tarde: mas alto y deja de responder
 
   // --- vidas (§9) ---
   lives:         2,
@@ -539,8 +571,8 @@ const Sfx = (() => {
       }
     },
 
-    // Los ocho efectos. El rango de ganancia es estrecho a proposito (0.07-0.14): lo que
-    // separa un sonido chico de uno grande es cuanto dura, no cuanto suena.
+    // Los once efectos. El rango de ganancia es estrecho a proposito (0.07-0.14): lo
+    // que separa un sonido chico de uno grande es cuanto dura, no cuanto suena.
     ui()      { if (ready && !muted) tone(1760, ac.currentTime, 0.018, 0.07); },
     shoot()   { if (fresh('shoot', 60)) seq([[2637, 8], [2093, 8], [1568, 8]], 0.08); },
     destroy() { if (fresh('destroy', 45)) scramble(12, 11, 2, 15, 0.13); },
@@ -550,6 +582,15 @@ const Sfx = (() => {
     death()   { seq([[1568, 90], [1319, 90], [1175, 90], [880, 90],
                      [784, 90], [659, 90], [523, 90], [440, 320]], 0.14); },
     level()   { seq([[1047, 70], [1319, 70], [1568, 70], [2093, 140]], 0.12); },
+    // Los tres powerups de estilo: sube igual que 'pickup' pero mas arriba y con
+    // un escalon mas, para que se oiga como pariente y no como el mismo premio.
+    power()   { seq([[1319, 35], [1568, 35], [2093, 35], [2637, 70]], 0.11); },
+    // Infectado: baja, que es lo que en este juego significa que algo salio mal, y
+    // cierra en la nota mas grave de la tabla, sola y larga.
+    infected(){ seq([[1175, 45], [880, 45], [659, 45], [440, 150]], 0.12); },
+    // La burbuja reventando. Baja porque perdes el escudo, pero corta: el jugador
+    // sobrevivio, y esto no puede confundirse con 'damage', que es mas grave y dura mas.
+    pop()     { seq([[1568, 35], [1047, 60]], 0.11); },
   };
 })();
 
@@ -1092,6 +1133,33 @@ const SHIP_SEGS = (() => {
 })();
 const DAMAGED_HIDE = [1, 6]; // segmentos que faltan tras perder la primera vida
 
+// Hitbox de la nave (§3.1). El casco no es redondo: el morro llega a 13,5 y el
+// flanco a 4,74 del centro, asi que un circulo de radio 11 mata por los costados
+// y perdona por la punta. Se colisiona con el contorno de verdad, en dos escalas:
+//   dano   — el contorno un poco encogido, para que matar sea siempre creible
+//   agarre — el contorno pelado, porque encoger ahi solo le saca recolectables
+//            al jugador (chico para morir, honesto para recolectar)
+// Los segmentos que se apagan al danarse (DAMAGED_HIDE) NO agujerean el hitbox:
+// son el indicador de vidas, y una nave dañada mas dificil de matar seria al reves.
+const HULL_SHRINK = 0.88;
+const HULL_DMG  = SHIP_PTS.map(p => ({ x: p.x * HULL_SHRINK, y: p.y * HULL_SHRINK }));
+const HULL_GRAB = SHIP_PTS;
+// Circunradio de cada casco: el filtro barato antes de mirar el poligono.
+const HULL_R_DMG  = Math.max(...HULL_DMG.map(p => Math.hypot(p.x, p.y)));
+const HULL_R_GRAB = Math.max(...HULL_GRAB.map(p => Math.hypot(p.x, p.y)));
+// Pico del latido de drawPickup: breathe = 1 + sin(t*4,2)*0,16, o sea 1,16 arriba.
+// El agarre usa ese maximo y no el valor del frame: asi nunca queda un punto
+// encendido fuera del hitbox, y agarrar no depende de en que parte del latido cayo.
+const PICKUP_BREATHE_MAX = 1.16;
+
+// Buffers de trabajo: el casco se transforma cada frame y no vale la pena
+// asignar sus doce puntos por cada copia de nave (hasta cuatro) y por meteoro.
+const HULL_WORLD = SHIP_PTS.map(() => ({ x: 0, y: 0 }));
+const HULL_LOCAL = SHIP_PTS.map(() => ({ x: 0, y: 0 }));
+
+// Interruptores de desarrollo. Apagados siempre; se prenden desde la consola.
+const DBG = { hitbox: false };
+
 /* ============================ estado ============================ */
 const SCREEN = { MENU: 'MENU', PLAY: 'PLAY', DEMO: 'DEMO', DEAD: 'DEAD', INITIALS: 'INITIALS',
                  SCORES: 'SCORES', LINK: 'LINK', ROTATE: 'ROTATE' };
@@ -1107,21 +1175,36 @@ const G = {
   deathTimer: 0, attract: false, demo: false,
   entry: false, entryT: 0, entryD: 0,   // la nave todavia esta llegando: manda el autopiloto
   ready: 0,                             // s de parpadeo del relevo, justo despues de llegar
+  fxSweep: 0,                           // s hasta el proximo barrido de seguridad de powerups (§8)
   buttons: [],
 };
 
 // La inercia lineal decae con constante de tiempo tau = -1/ln(1-shipFriction).
 // El giro usa una fraccion de esa misma constante, asi que si mueves la friccion
 // de la nave, el giro la sigue solo.
-function rotTau() {
-  return CFG.rotInertia * (-1 / Math.log(1 - CFG.shipFriction));
+//
+// ANCHOR es el unico powerup que toca el pilotaje, y lo hace por estas dos
+// funciones: limpio clava la nave (mucha friccion y giro directo) e infectado la
+// suelta (casi nada de friccion, morro perezoso). El giro NO hereda la friccion
+// del efecto a proposito: encadenar las dos multiplicaba tanto la constante que
+// la nave infectada dejaba de responder, y eso se lee como cuelgue, no como hielo.
+function shipFriction(s) {
+  const fx = s && s.fx && s.fx.anchor;
+  if (!fx) return CFG.shipFriction;
+  return fx.bad ? CFG.slipFriction : CFG.anchorFriction;
+}
+function rotTau(s) {
+  const fx = s && s.fx && s.fx.anchor;
+  const mul = !fx ? 1 : (fx.bad ? CFG.slipRotMul : CFG.anchorRotMul);
+  return CFG.rotInertia * mul * (-1 / Math.log(1 - CFG.shipFriction));
 }
 
 function newShip(x, y, a) {
   return {
     x, y, vx: 0, vy: 0, a: a === undefined ? -Math.PI / 2 : a, av: 0,
     lives: CFG.lives, damaged: false,
-    invuln: 0, grace: 0, cd: 0, alive: true,
+    invuln: 0, invulnBad: false, grace: 0, cd: 0, alive: true,
+    fx: {},                        // efectos de estilo con reloj propio (§8)
     left: false, right: false
   };
 }
@@ -1229,28 +1312,100 @@ function disintegrate(m, giveDrop) {
       life: rnd(0.4, 0.8), max: 0.8
     });
   }
-  if (giveDrop && Math.random() < dropOdds(m.r)) spawnPickup(m);
+  if (giveDrop && Math.random() < dropOdds(m)) spawnPickup(m);
 }
+
+/* ---------------------------- recolectables (§8) ---------------------------- */
+// Cinco recolectables, y cualquiera puede venir infectado: el infectado hace lo
+// contrario de lo que promete y dura el 70%. Todo lo que separa a un tipo de otro
+// vive en esta tabla —condicion, efecto y figura—; el resto del juego solo llama
+// a 'ok', 'apply' y 'draw'. Antes eran dos tipos con el mismo if repetido en el
+// sorteo, en la recogida y en el dibujo, y sumar uno obligaba a tocar los tres.
+
+// Efectos con reloj propio: viven en s.fx. El escudo no esta aca porque su reloj
+// sigue siendo s.invuln, que ya leen la colision y el dibujo desde antes.
+function fxOn(s, key, bad) {
+  const t = CFG.fxTime * (bad ? CFG.infectTimeMul : 1);
+  s.fx[key] = { t, max: t, bad: !!bad };
+}
+
+// Cuantos powerups "existen": los que la nave ya tiene puestos mas los que siguen
+// volando. Un pickup en el aire cuenta igual que uno recogido —es un efecto que
+// el jugador va a tener— y no contarlo dejaria juntar cuatro en pantalla.
+function fxCount() {
+  const s = G.ship;
+  if (!s) return G.pickups.length;
+  return (s.invuln > 0 ? 1 : 0) + Object.keys(s.fx).length + G.pickups.length;
+}
+
+// Los mandos cruzados son el inverso de las dos recompensas de supervivencia:
+// ni el escudo protege ni la reparacion cura, y encima girar sale al reves.
+function inverted(s) { return (s.invuln > 0 && s.invulnBad) || !!s.fx.invert; }
+
+const PICKUPS = {
+  // Burbuja: absorbe un golpe y revienta, o se agota sola. Infectada no absorbe
+  // nada, que es exactamente lo contrario de lo que su figura promete.
+  shield: {
+    ok: () => true,
+    apply(s, bad) {
+      s.invuln = CFG.invulnTime * (bad ? CFG.infectTimeMul : 1);
+      s.invulnBad = bad;
+    },
+    draw: drawShieldPick
+  },
+  repair: {
+    // Solo cae si hay algo que reparar: un pickup inutil seria una recompensa
+    // vacia por un tiro bien puesto.
+    ok: s => s.damaged && s.lives < CFG.lives,
+    apply(s, bad) {
+      if (bad) { fxOn(s, 'invert', true); return; }
+      s.lives = Math.min(CFG.lives, s.lives + 1);
+      s.damaged = false;              // la nave recupera su contorno completo
+    },
+    draw: drawRepairPick
+  },
+  // Los tres de estilo no se apilan consigo mismos: recogerlos de nuevo no
+  // renovaria nada que se note y ocuparia un hueco del tope de tres.
+  spread: { ok: s => !s.fx.spread, apply: (s, bad) => fxOn(s, 'spread', bad), draw: drawSpreadPick },
+  pierce: { ok: s => !s.fx.pierce, apply: (s, bad) => fxOn(s, 'pierce', bad), draw: drawPiercePick },
+  anchor: { ok: s => !s.fx.anchor, apply: (s, bad) => fxOn(s, 'anchor', bad), draw: drawAnchorPick }
+};
 
 // Probabilidad de soltar pickup segun el tamano, relativa al rango del nivel
 // actual: la roca mas chica paga +50%, la mas grande -50%. El promedio no cambia,
 // solo se reparte: tirarle a la grava rinde mas que tirarle a los bloques.
-function dropOdds(r) {
+// Encima, las mitades de una roca partida pagan un extra: partir es el tiro
+// dificil y hasta ahora lo unico que daba era mas blancos que esquivar.
+// Encima va el freno por saturacion: con dos powerups existentes cae la mitad, con
+// tres no cae nada. Eso es lo que sostiene el promedio de uno sin un reloj de
+// aparicion aparte: cuanto mas tenes menos te toca, asi que el que dispara mucho
+// se frena solo en vez de acumular.
+function dropOdds(m) {
+  const n = fxCount();
+  if (n >= CFG.fxHardCap) return 0;
   const c = curve();
   const lo = c.sizeMin, hi = Math.max(c.sizeMin + 4, c.sizeMax);
-  const t = clamp((r - lo) / Math.max(1, hi - lo), 0, 1);   // 0 = la mas chica, 1 = la mas grande
-  return CFG.dropChance * (1 + CFG.dropSizeBias - t * 2 * CFG.dropSizeBias);
+  const t = clamp((m.r - lo) / Math.max(1, hi - lo), 0, 1); // 0 = la mas chica, 1 = la mas grande
+  const crowd = n >= CFG.crowdedAt ? CFG.crowdedMul : 1;
+  const shard = m.splits ? 1 + CFG.shardDropBonus : 1;      // vino de un corte: paga mas
+  return CFG.dropChance * crowd * shard * (1 + CFG.dropSizeBias - t * 2 * CFG.dropSizeBias);
 }
 
 function spawnPickup(m) {
-  // Dos recolectables. El de reparacion solo cae si hay algo que reparar:
-  // un pickup inutil seria una recompensa vacia por un tiro bien puesto.
-  const canRepair = G.ship && G.ship.damaged && G.ship.lives < CFG.lives;
-  const kind = (canRepair && Math.random() < CFG.repairChance) ? 'repair' : 'shield';
+  const s = G.ship;
+  if (!s) return;
+  const kinds = Object.keys(PICKUPS).filter(k => PICKUPS[k].ok(s));
+  let total = 0;
+  for (const k of kinds) total += CFG.pickupWeights[k];
+  if (total <= 0) return;
+  let roll = Math.random() * total, kind = kinds[kinds.length - 1];
+  for (const k of kinds) { roll -= CFG.pickupWeights[k]; if (roll < 0) { kind = k; break; } }
   G.pickups.push({
     x: m.x, y: m.y,
     vx: m.vx * 0.45 + rnd(-15, 15), vy: m.vy * 0.45 + rnd(-15, 15),
-    t: 0, r: 13 * CFG.pickupScale, kind
+    t: 0, r: 13 * CFG.pickupScale, kind,
+    bad: Math.random() < CFG.infectChance,
+    armed: false, away: 0           // nace inerte: se arma recien tras medio segundo lejos
   });
 }
 
@@ -1268,6 +1423,7 @@ function startGame(mode) {
   G.score = 0; G.level = 1; G.nextLevelAt = CFG.levelBase;
   G.time = 0; G.spawnTimer = 0; G.refill = 0;   // el campo se llena cuando la nave llega, no antes
   G.flash = 0; G.levelBanner = 0; G.timeScale = 1; G.deathTimer = 0;
+  G.fxSweep = CFG.fxSweep;
   G.attract = mode !== 'play';      // en los dos demos vuela la maquina
   G.demo    = mode === 'demo';
   Sfx.quiet = G.attract && !G.demo; // la de fondo se ve pero no se oye; la elegida suena
@@ -1391,13 +1547,17 @@ function updatePlay(dt) {
   else if (G.attract) { const b = botControl(s); L = b.left; R = b.right; }
   else { L = Input.left; R = Input.right; }
   if (!s.alive) { L = false; R = false; }
+  // Mandos cruzados: es el inverso de las dos recompensas de supervivencia. Se
+  // cruzan aca y no en la lectura del mando para que le pasen igual al bot de la
+  // demo, que maneja con estos mismos motores.
+  if (inverted(s)) { const t = L; L = R; R = t; }
   s.left = L; s.right = R;
 
   const both = L && R;
   // Rotacion pura: no desplaza (§4). Ahora con inercia: la velocidad angular
   // persigue al objetivo, no salta. Soltar el motor deja el giro corriendo un poco.
   const targetAv = both ? 0 : ((R ? CFG.shipRot : 0) - (L ? CFG.shipRot : 0));
-  s.av += (targetAv - s.av) * (1 - Math.exp(-dt / rotTau()));
+  s.av += (targetAv - s.av) * (1 - Math.exp(-dt / rotTau(s)));
   s.a += s.av * dt;
   // El motor de la demo elegida SI suena: oir el chorro justo cuando se enciende
   // la etiqueta de abajo es media explicacion. El de la demo de fondo no.
@@ -1413,7 +1573,7 @@ function updatePlay(dt) {
   }
 
   // friccion baja: al girar, la velocidad vieja sigue un rato -> deriva
-  const f = Math.pow(1 - CFG.shipFriction, dt);
+  const f = Math.pow(1 - shipFriction(s), dt);
   s.vx *= f; s.vy *= f;
 
   let sp = Math.hypot(s.vx, s.vy);
@@ -1430,11 +1590,11 @@ function updatePlay(dt) {
 
   // ---- disparo: cualquier motor encendido dispara (§7) ----
   s.cd -= dt;
-  if ((L || R) && s.alive && !G.entry && s.cd <= 0 && G.bullets.length < CFG.maxBullets) {
+  const fan = s.fx.spread, pierce = s.fx.pierce;
+  const cap = fan ? CFG.maxBulletsSpread : CFG.maxBullets;
+  if ((L || R) && s.alive && !G.entry && s.cd <= 0 && G.bullets.length < cap) {
     s.cd = CFG.fireInterval;
     const nose = CFG.shipLen / 2;
-    const bvx = s.vx + Math.cos(s.a) * CFG.bulletSpeed;
-    const bvy = s.vy + Math.sin(s.a) * CFG.bulletSpeed;
     // Giro de la bala (§7.1). El piso lo pone la velocidad de la nave: cuanto
     // mas rapido va el cohete, mas rapido gira lo que suelta, y nunca sale
     // quieta. Encima puede ganarle el giro propio de la nave, asi que disparar
@@ -1442,20 +1602,51 @@ function updatePlay(dt) {
     const spinFloor = CFG.bulletSpinMin +
       (CFG.bulletSpinMax - CFG.bulletSpinMin) * clamp(sp / maxSp, 0, 1);
     const spin = Math.max(spinFloor, Math.abs(s.av) * CFG.bulletSpinKick);
-    G.bullets.push({
-      x: s.x + Math.cos(s.a) * nose, y: s.y + Math.sin(s.a) * nose,
-      vx: bvx, vy: bvy,
-      a: s.a,                                        // sale alineada con el disparo
-      av: spin * (s.av < 0 ? -1 : 1),                // y gira hacia donde giraba la nave
-      len: Math.hypot(bvx, bvy) * CFG.bulletStreak,  // largo fijo: ya no lo marca la velocidad de vuelo
-      life: CFG.bulletLife, max: CFG.bulletLife
-    });
-    Sfx.shoot();
+    // El abanico limpio abre tres balas a angulo fijo: cambia punteria por
+    // cobertura. Infectado sortea cada angulo, asi que deja de ser cobertura y
+    // pasa a ser justo lo contrario, no poder apuntar.
+    const arms = !fan ? [0]
+      : fan.bad ? [rnd(-1, 1), rnd(-1, 1), rnd(-1, 1)].map(k => k * CFG.spreadAngle * 3)
+      : [-CFG.spreadAngle, 0, CFG.spreadAngle];
+    const thru = !!pierce && !pierce.bad;
+    const life = CFG.bulletLife * (pierce && pierce.bad ? CFG.pierceLifeMul : 1);
+    for (const off of arms) {
+      const a = s.a + off;
+      const bvx = s.vx + Math.cos(a) * CFG.bulletSpeed;
+      const bvy = s.vy + Math.sin(a) * CFG.bulletSpeed;
+      G.bullets.push({
+        x: s.x + Math.cos(a) * nose, y: s.y + Math.sin(a) * nose,
+        vx: bvx, vy: bvy,
+        a,                                             // sale alineada con el disparo
+        av: spin * (s.av < 0 ? -1 : 1),                // y gira hacia donde giraba la nave
+        // largo fijo: ya no lo marca la velocidad de vuelo. La perforante saca
+        // media raya mas, que es como se ve que atraviesa antes de atravesar nada.
+        len: Math.hypot(bvx, bvy) * CFG.bulletStreak * (thru ? 1.8 : 1),
+        life, max: life,
+        pierce: thru, cool: 0
+      });
+    }
+    Sfx.shoot();                                       // una sola vez, sea una bala o tres
   }
 
-  if (s.invuln > 0) s.invuln -= dt;
+  if (s.invuln > 0) { s.invuln -= dt; if (s.invuln <= 0) s.invulnBad = false; }
   if (s.grace > 0) s.grace -= dt;
   if (G.ready > 0) G.ready -= dt;
+  for (const k in s.fx) { const fx = s.fx[k]; fx.t -= dt; if (fx.t <= 0) delete s.fx[k]; }
+  // Barrido de seguridad. NO es una regla de juego: el freno de dropOdds ya impide
+  // llegar a cuatro, asi que esto no deberia dispararse nunca —y si se ve, el bug
+  // esta en el freno, porque un efecto que se apaga antes de tiempo se lee como
+  // falla del juego. Va cada diez segundos y no por cuadro: gravar el bucle para
+  // algo que no pasa seria de balde.
+  G.fxSweep -= dt;
+  if (G.fxSweep <= 0) {
+    G.fxSweep = CFG.fxSweep;
+    const keys = Object.keys(s.fx);
+    if (keys.length > CFG.fxHardCap) {
+      keys.sort((a, b) => s.fx[a].t - s.fx[b].t);      // se cae el que menos le queda
+      for (const k of keys.slice(0, keys.length - CFG.fxHardCap)) delete s.fx[k];
+    }
+  }
 
   // ---- goteo por tiempo (§10) ----
   // La entrada no paga: el reloj corre cuando el jugador ya maneja.
@@ -1494,11 +1685,21 @@ function updatePlay(dt) {
     const b = G.bullets[i];
     b.x += b.vx * dt; b.y += b.vy * dt; b.a += b.av * dt; b.life -= dt;
     if (b.life <= 0 || b.x < 0 || b.x > W || b.y < 0 || b.y > H) { G.bullets.splice(i, 1); continue; }
+    // La perforante queda sorda un instante tras cada impacto: sin eso vuelve a
+    // chocar en el mismo cuadro con las dos mitades que acaba de crear la
+    // particion y se las lleva gratis, que no es atravesar, es barrer.
+    if (b.cool > 0) { b.cool -= dt; continue; }
+    // La bala pega con la raya entera, no con su centro: es lo que se ve, y un
+    // tiro que visualmente atraviesa la roca tiene que reventarla (§7.2). El
+    // largo se encoge con el apagado, asi que una bala moribunda pega menos.
+    const half = bulletHalf(b);
+    const hx = Math.cos(b.a) * half, hy = Math.sin(b.a) * half;
     for (let j = G.meteors.length - 1; j >= 0; j--) {
       const m = G.meteors[j];
-      if (Math.hypot(b.x - m.x, b.y - m.y) > m.r) continue;
-      if (!pointInRock(b.x, b.y, m)) continue;
-      G.bullets.splice(i, 1);
+      if (Math.hypot(b.x - m.x, b.y - m.y) > m.r + half) continue;
+      if (!segHitsRock(b.x - hx, b.y - hy, b.x + hx, b.y + hy, m)) continue;
+      if (b.pierce) b.cool = CFG.pierceCool;   // sigue de largo, no se borra
+      else G.bullets.splice(i, 1);
       hitMeteor(j, b);            // la bala va con ella: su velocidad es la que pone a girar las mitades
       break;
     }
@@ -1509,36 +1710,67 @@ function updatePlay(dt) {
     const p = G.pickups[i];
     p.x += p.vx * dt; p.y += p.vy * dt; p.t += dt;
     if (p.x < -40 || p.x > W + 40 || p.y < -40 || p.y > H + 40) { G.pickups.splice(i, 1); continue; }
+    // Agarrar usa el contorno pelado de la nave, sin encoger: es el unico par
+    // donde achicar el hitbox le juega en contra al jugador, y los recolectables
+    // ya son bastante raros como para ademas perderlos por un flanco (§8.1).
     if (s.alive && !G.entry) {
+      // El contacto se mide contra el casco pelado, no contra un circulo (§8.1),
+      // pero ya no decide solo: primero hay que estar armado.
+      const grab = p.r * PICKUP_BREATHE_MAX;
+      let near = false;
       for (const cpy of shipCopies(s)) {
-        if (Math.hypot(p.x - cpy.x, p.y - cpy.y) < p.r + CFG.shipRadius) {
-          G.pickups.splice(i, 1);
-          if (p.kind === 'repair') {
-            s.lives = Math.min(CFG.lives, s.lives + 1);
-            s.damaged = false;         // la nave recupera su contorno completo
-            Sfx.repair(); buzz([20, 40, 20]);
-            G.rings.push({ x: p.x, y: p.y, r: 34, life: 0.5, max: 0.5, inward: true });
-          } else {
-            s.invuln = CFG.invulnTime;
-            Sfx.pickup(); buzz(20);
-            G.rings.push({ x: p.x, y: p.y, r: 8, life: 0.5, max: 0.5 });
-          }
-          break;
+        if (Math.hypot(p.x - cpy.x, p.y - cpy.y) > grab + HULL_R_GRAB) continue;
+        if (polyHitsCircle(hullAt(HULL_GRAB, cpy.x, cpy.y, s.a, HULL_WORLD), p.x, p.y, grab)) {
+          near = true; break;
         }
+      }
+      // Armado diferido: el pickup nace de la roca que acabas de reventar, o sea
+      // muchas veces encima de la nave. Hasta que no la ve medio segundo afuera no
+      // se deja agarrar. Agarrarlo sin haberlo mirado era gratis mientras los dos
+      // eran regalos; con uno de cada seis infectado pasa a ser una trampa.
+      if (!p.armed) {
+        if (near) p.away = 0;
+        else if ((p.away += dt) >= CFG.pickupArm) p.armed = true;
+      } else if (near) {
+        G.pickups.splice(i, 1);
+        PICKUPS[p.kind].apply(s, p.bad);
+        if (p.bad)                    { Sfx.infected(); buzz([40, 30, 40]); }
+        else if (p.kind === 'repair') { Sfx.repair();   buzz([20, 40, 20]); }
+        else if (p.kind === 'shield') { Sfx.pickup();   buzz(20); }
+        else                          { Sfx.power();    buzz(20); }
+        // el anillo sigue el mismo eje que las ondas de la figura: lo que da,
+        // irradia; lo que quita, absorbe
+        const suck = p.bad || p.kind === 'repair';
+        G.rings.push({ x: p.x, y: p.y, r: suck ? 34 : 8, life: 0.5, max: 0.5, inward: suck });
       }
     }
   }
 
   // ---- colision nave / meteoros ----
   // Entrando no choca: seria morir por algo que el jugador no podia esquivar.
-  if (s.alive && !G.entry && s.invuln <= 0 && s.grace <= 0) {
+  // Ya no hay guarda de invuln aca: la burbuja no vuelve intangible a la nave,
+  // se come UN golpe y revienta, asi que el impacto hay que seguir buscandolo
+  // mientras dura. Quien lo paga se decide adentro. El blanco sigue siendo el
+  // casco aunque la burbuja se dibuje mas grande: agrandarlo haria chocar contra
+  // rocas que hoy se esquivan, y eso se lee como "el escudo me mato".
+  if (s.alive && !G.entry && s.grace <= 0) {
+    // Con el casco de verdad en vez de un circulo, el paso por frame (unas 5,8
+    // unidades a 60 Hz) queda por debajo del grosor del casco salvo en la cuña
+    // del morro, y solo si se caen frames: dt esta topeado en 0,05, o sea hasta
+    // 17,4 unidades de un saque. Se acepta porque falla del lado bueno —la nave
+    // se salva de un choque que le tocaba— y porque ese dt suele ser la pestaña
+    // en segundo plano, sin nadie jugando.
     outer:
     for (const cpy of shipCopies(s)) {
+      const hull = hullAt(HULL_DMG, cpy.x, cpy.y, s.a, HULL_WORLD);
       for (let j = G.meteors.length - 1; j >= 0; j--) {
         const m = G.meteors[j];
-        if (Math.hypot(cpy.x - m.x, cpy.y - m.y) > m.r + CFG.shipRadius) continue;
-        if (!circleHitsRock(cpy.x, cpy.y, CFG.shipRadius, m)) continue;
-        damageShip();
+        if (Math.hypot(cpy.x - m.x, cpy.y - m.y) > m.r + HULL_R_DMG) continue;
+        if (!polyHitsRock(hull, m)) continue;
+        // 'break outer' es lo que garantiza que la burbuja absorba una sola vez
+        // aunque la nave este a caballo del borde y el golpe se vea en dos copias.
+        if (s.invuln > 0 && !s.invulnBad) popShield(j);
+        else damageShip();
         break outer;
       }
     }
@@ -1669,6 +1901,19 @@ function hitMeteor(index, bullet) {
   Sfx.destroy(); buzz(18);
 }
 
+// La burbuja se come un golpe y revienta. Que ademas se lleve la roca no es un
+// regalo de mas: sin eso la nave queda dentro del contorno que acaba de tocar y
+// el choque siguiente entra solo en cuanto se termina la gracia.
+function popShield(index) {
+  const s = G.ship, m = G.meteors[index];
+  G.meteors.splice(index, 1);
+  disintegrate(m, false);             // no paga pickup: chocarla no fue un tiro bien puesto
+  s.invuln = 0; s.invulnBad = false;
+  s.grace = CFG.hitGrace;             // margen para salir de donde estaba la roca
+  Sfx.pop(); buzz([20, 30, 20]);
+  G.rings.push({ x: s.x, y: s.y, r: 8, life: 0.45, max: 0.45 });
+}
+
 function damageShip() {
   const s = G.ship;
   s.lives--;
@@ -1700,29 +1945,121 @@ function damageShip() {
   }
 }
 
-function pointInRock(px, py, m) {
-  const dx = px - m.x, dy = py - m.y;
-  const ca = Math.cos(-m.a), sa = Math.sin(-m.a);
-  const lx = dx * ca - dy * sa, ly = dx * sa + dy * ca;
+/* ====================== geometria de colision (§3.1) ======================
+   Todo esto trabaja en UNIDADES DE MUNDO, nunca en puntos de LCD. Es lo que
+   hace que el juego se juegue igual en cualquier pantalla: el alto del mundo
+   vale siempre baseHeight, asi que un objeto de 27 unidades mide 27 unidades
+   en todos lados, mientras que un pixel encendido mide entre 3,3 y 4,5 unidades
+   segun lo ancha que sea la ventana. O sea que "los pixeles que se tocan" seria
+   un hitbox distinto en cada monitor.
+   La regla, entonces: el objeto es la LINEA CENTRAL del trazo. El grosor del
+   nib es solo con que gordura lo pinta el LCD, no parte de la cosa. */
+
+// Contorno cerrado por conteo de cruces. Los puntos vienen en el espacio del
+// poligono, asi que quien llame se encarga de traer el punto hasta ahi.
+function pointInPoly(px, py, p) {
   let inside = false;
-  const p = m.pts;
   for (let i = 0, j = p.length - 1; i < p.length; j = i++) {
-    if ((p[i].y > ly) !== (p[j].y > ly) &&
-        lx < (p[j].x - p[i].x) * (ly - p[i].y) / (p[j].y - p[i].y) + p[i].x) inside = !inside;
+    if ((p[i].y > py) !== (p[j].y > py) &&
+        px < (p[j].x - p[i].x) * (py - p[i].y) / (p[j].y - p[i].y) + p[i].x) inside = !inside;
   }
   return inside;
 }
-function circleHitsRock(px, py, r, m) {
-  if (pointInRock(px, py, m)) return true;
-  const dx = px - m.x, dy = py - m.y;
+
+// Del mundo al espacio de la roca: la roca gira, asi que en vez de rotar sus
+// diez o doce vertices se desgira el punto que viene de visita.
+function toRock(x, y, m, out) {
+  const dx = x - m.x, dy = y - m.y;
   const ca = Math.cos(-m.a), sa = Math.sin(-m.a);
-  const lx = dx * ca - dy * sa, ly = dx * sa + dy * ca;
+  out.x = dx * ca - dy * sa;
+  out.y = dx * sa + dy * ca;
+  return out;
+}
+
+// Cruce de dos segmentos por el signo del producto cruzado de cada extremo
+// contra el otro segmento: si los dos pares quedan en lados opuestos, se cortan.
+function segsCross(ax, ay, bx, by, cx, cy, dx, dy) {
+  const d1 = (dx - cx) * (ay - cy) - (dy - cy) * (ax - cx);
+  const d2 = (dx - cx) * (by - cy) - (dy - cy) * (bx - cx);
+  const d3 = (bx - ax) * (cy - ay) - (by - ay) * (cx - ax);
+  const d4 = (bx - ax) * (dy - ay) - (by - ay) * (dx - ax);
+  return ((d1 > 0) !== (d2 > 0)) && ((d3 > 0) !== (d4 > 0));
+}
+
+const _pA = { x: 0, y: 0 }, _pB = { x: 0, y: 0 };
+
+// Lo que le queda de vida a la raya, 1 recien salida y 0 apagada. El apagado
+// arranca lentisimo y se cae al final (k = 1 - t^n), asi que la bala conserva
+// casi todo su largo durante casi todo el vuelo (§7.1).
+function bulletK(b) {
+  return 1 - Math.pow(clamp(1 - b.life / b.max, 0, 1), CFG.bulletFade);
+}
+// Medio largo de la raya. Lo usan el dibujo Y la colision, a proposito: si cada
+// uno se calculara su version, tarde o temprano se separan y la bala pasa a
+// pegar donde no se ve.
+function bulletHalf(b) { return b.len * bulletK(b) * 0.5; }
+
+// La bala contra la roca (§7.2). La bala NO es un punto: es la raya que se ve,
+// centrada en su posicion y girando sobre si misma. Se prueba el segmento
+// entero, que es justo lo que el jugador cree que esta disparando.
+// Un segmento no tiene area, asi que solo hay dos formas de tocar: que alguna
+// punta caiga adentro del contorno, o que la raya cruce alguna arista.
+function segHitsRock(x1, y1, x2, y2, m) {
+  toRock(x1, y1, m, _pA);
+  toRock(x2, y2, m, _pB);
   const p = m.pts;
+  if (pointInPoly(_pA.x, _pA.y, p)) return true;
+  if (pointInPoly(_pB.x, _pB.y, p)) return true;
+  for (let i = 0, j = p.length - 1; i < p.length; j = i++) {
+    if (segsCross(_pA.x, _pA.y, _pB.x, _pB.y, p[j].x, p[j].y, p[i].x, p[i].y)) return true;
+  }
+  return false;
+}
+
+// El casco puesto en el mundo: gira por 'a' y se traslada. La convencion de giro
+// tiene que ser LA MISMA que la de VRAM.polyAt, que es con la que se dibuja; si
+// se separan, el hitbox deja de calzar con lo que se ve y no hay forma de notarlo
+// a ojo. El test dev/collide-test.mjs compara las dos, justamente por eso.
+function hullAt(pts, x, y, a, out) {
+  const ca = Math.cos(a), sa = Math.sin(a);
+  for (let i = 0; i < pts.length; i++) {
+    out[i].x = x + pts[i].x * ca - pts[i].y * sa;
+    out[i].y = y + pts[i].x * sa + pts[i].y * ca;
+  }
+  return out;
+}
+
+// Casco contra roca: dos contornos cerrados. Hay tres formas de solaparse y
+// las tres hacen falta —un vertice del casco adentro de la roca, un vertice de
+// la roca adentro del casco (una piedra chica metida entera), o ninguna de las
+// dos y las aristas cruzandose—. Las dos primeras son baratas y cortan casi siempre.
+function polyHitsRock(hull, m) {
+  const p = m.pts, n = hull.length;
+  for (let i = 0; i < n; i++) {
+    toRock(hull[i].x, hull[i].y, m, HULL_LOCAL[i]);
+    if (pointInPoly(HULL_LOCAL[i].x, HULL_LOCAL[i].y, p)) return true;
+  }
   for (let i = 0; i < p.length; i++) {
-    const a = p[i], b = p[(i + 1) % p.length];
+    if (pointInPoly(p[i].x, p[i].y, HULL_LOCAL)) return true;
+  }
+  for (let i = 0, j = n - 1; i < n; j = i++) {
+    for (let k = 0, l = p.length - 1; k < p.length; l = k++) {
+      if (segsCross(HULL_LOCAL[j].x, HULL_LOCAL[j].y, HULL_LOCAL[i].x, HULL_LOCAL[i].y,
+                    p[l].x, p[l].y, p[k].x, p[k].y)) return true;
+    }
+  }
+  return false;
+}
+
+// Casco contra recolectable: el centro adentro del casco, o alguna arista mas
+// cerca que el radio.
+function polyHitsCircle(hull, cx, cy, r) {
+  if (pointInPoly(cx, cy, hull)) return true;
+  for (let i = 0, j = hull.length - 1; i < hull.length; j = i++) {
+    const a = hull[j], b = hull[i];
     const vx = b.x - a.x, vy = b.y - a.y;
-    const t = clamp(((lx - a.x) * vx + (ly - a.y) * vy) / (vx * vx + vy * vy || 1), 0, 1);
-    if (Math.hypot(lx - (a.x + vx * t), ly - (a.y + vy * t)) < r) return true;
+    const t = clamp(((cx - a.x) * vx + (cy - a.y) * vy) / (vx * vx + vy * vy || 1), 0, 1);
+    if (Math.hypot(cx - (a.x + vx * t), cy - (a.y + vy * t)) < r) return true;
   }
   return false;
 }
@@ -1743,6 +2080,19 @@ function botControl(s) {
       if (cd < m.r + 46 && t < threatT) { threatT = t; threat = m; }
     }
     if (d < targetD) { targetD = d; target = m; }
+  }
+  // El bot no elige pickups —no sabe—, pero los infectados si los esquiva: que
+  // tropiece con uno le cruza los mandos delante del jugador que esta mirando la
+  // demo justamente para aprender a jugar.
+  for (const p of G.pickups) {
+    if (!p.bad || !p.armed) continue;
+    const dx = p.x - s.x, dy = p.y - s.y;
+    const rvx = p.vx - s.vx, rvy = p.vy - s.vy;
+    const vv = rvx * rvx + rvy * rvy;
+    const t = vv > 1e-3 ? -(dx * rvx + dy * rvy) / vv : -1;
+    if (t <= 0 || t >= 1.6) continue;
+    const cd = Math.hypot(dx + rvx * t, dy + rvy * t);
+    if (cd < p.r + CFG.shipRadius + 10 && t < threatT) { threatT = t; threat = p; }
   }
   // Con avance constante, "ambos" ya no acelera: frena. El bot lo usa solo para
   // quedarse encarando una roca mientras dispara.
@@ -1766,7 +2116,7 @@ function botControl(s) {
 // Ya encarada, 'hold' deja los dos motores puestos, que es el freno; 'dead' es
 // cuanto se admite de desvio antes de considerarla encarada.
 function steerTo(s, want, hold, dead) {
-  const aEff = s.a + s.av * rotTau();
+  const aEff = s.a + s.av * rotTau(s);
   const d = ((want - aEff + Math.PI) % TAU + TAU) % TAU - Math.PI;
   if (Math.abs(d) < (dead === undefined ? 0.18 : dead)) return { left: !!hold, right: !!hold };
   return { left: d < 0, right: d > 0 };
@@ -1792,7 +2142,8 @@ const Demo = (() => {
     ['BOTH SIDES BRAKE', 'THE DRIFT KEEPS GOING'],
     ['ANY THRUSTER FIRES', 'TURN TO AIM'],
     ['SMALL ROCKS PAY MORE', 'LEVELS SHRINK THEM'],
-    ['GRAB THE PICK UPS', 'SHIELD AND REPAIR'],
+    ['GRAB THE PICK UPS', 'FIVE KINDS NOW'],
+    ['CRACKED AND STILL', 'MEANS INFECTED'],
     ['TWO HITS END THE RUN', 'TOUCH TO GO BACK'],
   ];
   let i = 0, t = 0;
@@ -1984,14 +2335,35 @@ const Stars = (() => {
   return { reset, draw };
 })();
 
+// La burbuja del escudo. Se dibuja mas grande que la nave y NO agranda el blanco:
+// es la senal, no el hitbox. La infectada va con huecos —no absorba nada— y los
+// huecos van quietos, igual que en los pickups: lo detenido es lo podrido.
+function drawBubble(x, y, rad, v, broken) {
+  if (!broken) { VRAM.circle(x, y, rad, v); return; }
+  const n = 48;
+  for (let k = 0; k < n; k++) {
+    if ((k % 12) < 4) continue;                     // tres huecos fijos
+    const a = k / n * TAU;
+    VRAM.point(x + Math.cos(a) * rad, y + Math.sin(a) * rad, v);
+  }
+}
+
 function drawShip(s, x, y) {
   const a = s.a, ca = Math.cos(a), sa = Math.sin(a);
   let v = 1;
-  const shielded = s.invuln > 0;
-  if (shielded) {
-    v = 0.4;                                        // mas apagada mientras dura (§8)
-    if (s.invuln < CFG.invulnBlink) v = (Math.sin(s.invuln * 26) > 0) ? 0.7 : 0.34;
-  } else if (s.grace > 0 && Math.sin(s.grace * 30) > 0) v = 0.4;
+  // El escudo ya no atenua la nave. Atenuarla era invisibilidad, no escudo, y
+  // ademas hacia falta ese lenguaje libre para ANCHOR: clavado va de trazo
+  // grueso, patinando va punteado. La burbuja es ahora la unica senal del escudo.
+  const anchor = s.fx.anchor;
+  let size = 1, dash = 0;
+  if (anchor) {
+    if (anchor.bad) dash = 2; else size = 2;
+    if (anchor.t < CFG.fxBlink && Math.sin(anchor.t * 26) < 0) v = 0.34;
+  }
+  // Mandos cruzados: el casco tiembla. No hay nada mas que mostrar —el efecto se
+  // siente en las manos— pero algo tiene que decir de donde viene.
+  const shake = inverted(s) ? 0.6 : 0;
+  if (s.grace > 0 && Math.sin(s.grace * 30) > 0) v = 0.4;
   // La nave que trae el autopiloto se dibuja en gris: en cuatro tonos, no ser
   // el blanco pleno es la diferencia que se nota sin tener que explicarla.
   if (G.entry) v = CFG.entryTone;
@@ -1999,13 +2371,19 @@ function drawShip(s, x, y) {
   // atenuandose— unas cuantas veces. Es el aviso de que ya responde.
   if (G.ready > 0) v = Math.sin(G.ready * TAU * CFG.readyHz) > 0 ? 1 : 0;
 
-  const dash = shielded ? 2 : 0;                    // contorno punteado del escudo
+  if (s.invuln > 0 && !G.entry) {
+    let bv = 0.75;
+    if (s.invuln < CFG.invulnBlink) bv = Math.sin(s.invuln * 26) > 0 ? 0.9 : 0.3;
+    drawBubble(x, y, CFG.shieldRadius, bv, s.invulnBad);
+  }
+
+  const jx = shake ? rnd(-shake, shake) : 0, jy = shake ? rnd(-shake, shake) : 0;
   SHIP_SEGS.forEach((seg, i) => {
     if (s.damaged && DAMAGED_HIDE.includes(i)) return;   // dano visible permanente (§3)
     VRAM.line(
-      x + seg[0].x * ca - seg[0].y * sa, y + seg[0].x * sa + seg[0].y * ca,
-      x + seg[1].x * ca - seg[1].y * sa, y + seg[1].x * sa + seg[1].y * ca,
-      v, 1, dash);
+      jx + x + seg[0].x * ca - seg[0].y * sa, jy + y + seg[0].x * sa + seg[0].y * ca,
+      jx + x + seg[1].x * ca - seg[1].y * sa, jy + y + seg[1].x * sa + seg[1].y * ca,
+      v, size, dash);
   });
 
   // motores visibles (§3): crucero siempre encendido atras; al frenar,
@@ -2035,46 +2413,115 @@ function drawShip(s, x, y) {
   }
 }
 
+// El cuerpo del recolectable mide 2.3 puntos de LCD de radio: una figura de cinco
+// por cinco. A esa escala un hexagono y un rombo caen sobre los mismos pixeles,
+// que es por lo que antes no se distinguian. Asi que no se separan por numero de
+// lados sino por varios ejes a la vez, que a cinco pixeles si sobreviven, y sin
+// usar color, que en cuatro tonos no existe (§8):
+//
+//                forma                giro           ondas
+//   escudo       redonda dispersa     orbita         hacia afuera (irradia)
+//   reparacion   cruz recta plena     quieta         hacia adentro (absorbe)
+//   abanico      tres brazos en V     abre y cierra  hacia afuera
+//   perforante   barra alargada       sobre su eje   hacia afuera
+//   ancla        cuadrado macizo      ninguno        ninguna (late en tamano)
+//
+// Encima de esos ejes va el de la infeccion: el infectado esta COMPLETAMENTE
+// detenido y lleva una fisura encima. No se finge un tiron —el juego tiene tope
+// de cuadros y a veces los da de verdad, asi que un glitch simulado se leeria
+// como falla de rendimiento y el jugador culparia al juego en vez de leer la
+// senal—: la quietud absoluta es lo que se nota de reojo sin saber por que, y la
+// fisura es lo que lo confirma al mirar. De ahi sale una regla dura para las
+// cinco figuras: ninguna limpia puede quedarse quieta, o la infeccion deja de
+// leerse. Por eso la cruz de reparacion, que no gira, respira y absorbe; y por
+// eso el ancla, que no gira ni irradia, late.
 function drawPickup(p) {
-  // El cuerpo del recolectable mide 2.3 puntos de LCD de radio: una figura de
-  // cinco por cinco. A esa escala un hexagono y un rombo caen sobre los mismos
-  // pixeles, que es por lo que antes no se distinguian. Asi que no se separan
-  // por numero de lados sino por tres ejes a la vez, que a cinco pixeles si
-  // sobreviven, y sin usar color, que en cuatro tonos no existe (§8):
-  //
-  //            escudo                   reparacion
-  //   forma    redonda, dispersa        recta, plena
-  //   giro     orbita                   quieta
-  //   ondas    hacia afuera (irradia)   hacia adentro (absorbe)
-  //
-  const breathe = 1 + Math.sin(p.t * 4.2) * 0.16;
-  const R = p.r * breathe;
-  const repair = p.kind === 'repair';
+  const t = p.bad ? 0 : p.t;                              // infectado: reloj congelado
+  const R = p.r * (p.bad ? 1 : 1 + Math.sin(p.t * 4.2) * 0.16);
+  PICKUPS[p.kind].draw(p, R, t);
+  if (p.bad) crack(p, R);
+}
 
-  if (repair) {
-    // Cruz gruesa alineada a los ejes: el simbolo de salud de toda la vida, y a
-    // cinco pixeles se lee de una. Va sin girar a proposito — quieta se
-    // distingue mas, y ademas una cruz que gira se convierte en una equis cada
-    // cuarto de vuelta y deja de ser una cruz.
-    VRAM.line(p.x - R, p.y, p.x + R, p.y, 1, 2);
-    VRAM.line(p.x, p.y - R, p.x, p.y + R, 1, 2);
-  } else {
-    // Nucleo con tres satelites en orbita: redondo, disperso y en movimiento, o
-    // sea lo contrario de la cruz en los tres ejes. La orbita es lo que se ve
-    // primero aunque el nucleo quede en un solo punto.
-    VRAM.point(p.x, p.y, 1);
-    const spin = p.t * 1.1;
-    for (let k = 0; k < 3; k++) {
-      const a = spin + k * TAU / 3;
-      VRAM.point(p.x + Math.cos(a) * R * 1.6, p.y + Math.sin(a) * R * 1.6, 1);
-    }
-  }
+// Las ondas: el mismo gesto para todos, con el sentido como unico eje. Lo que da
+// irradia hacia afuera; lo que quita absorbe hacia adentro.
+function waves(p, R, t, inward) {
   for (let k = 0; k < 3; k++) {
-    const ph = ((p.t * 0.75) + k / 3) % 1;
-    // ondas que entran hacia adentro en el de reparacion: absorbe, no irradia
-    if (repair) VRAM.circle(p.x, p.y, R * (0.6 + (1 - ph) * 2.0), ph * 0.6);
+    const ph = ((t * 0.75) + k / 3) % 1;
+    if (inward) VRAM.circle(p.x, p.y, R * (0.6 + (1 - ph) * 2.0), ph * 0.6);
     else        VRAM.circle(p.x, p.y, R * (0.5 + ph * 1.9), (1 - ph) * 0.55);
   }
+}
+
+// La fisura: una recta punteada que cruza el simbolo. La silueta de abajo se
+// sigue reconociendo a proposito —tenes que poder saber QUE powerup estas
+// rechazando— pero esta partida. Va a angulo fijo, porque la infeccion no se
+// anima, y corrida del centro: pasando por el medio quedaba tapada justo por la
+// parte mas gruesa de cada figura y no se veia.
+function crack(p, R) {
+  const a = 0.6, dx = Math.cos(a) * R * 2.6, dy = Math.sin(a) * R * 2.6;
+  const ox = -Math.sin(a) * R * 0.55, oy = Math.cos(a) * R * 0.55;
+  VRAM.line(p.x + ox - dx, p.y + oy - dy, p.x + ox + dx, p.y + oy + dy, 1, 1, 2);
+}
+
+function drawShieldPick(p, R, t) {
+  // Nucleo con tres satelites en orbita: redondo, disperso y en movimiento, o sea
+  // lo contrario de la cruz en los tres ejes. La orbita es lo que se ve primero
+  // aunque el nucleo quede en un solo punto.
+  VRAM.point(p.x, p.y, 1);
+  for (let k = 0; k < 3; k++) {
+    const a = t * 1.1 + k * TAU / 3;
+    VRAM.point(p.x + Math.cos(a) * R * 1.6, p.y + Math.sin(a) * R * 1.6, 1);
+  }
+  if (!p.bad) waves(p, R, t, false);
+}
+
+function drawRepairPick(p, R, t) {
+  // Cruz gruesa alineada a los ejes: el simbolo de salud de toda la vida, y a
+  // cinco pixeles se lee de una. Va sin girar a proposito — quieta se distingue
+  // mas, y ademas una cruz que gira se convierte en una equis cada cuarto de
+  // vuelta y deja de ser una cruz. Lo que no puede es quedarse del todo quieta:
+  // respira y absorbe, o seria indistinguible de un pickup infectado.
+  VRAM.line(p.x - R, p.y, p.x + R, p.y, 1, 2);
+  VRAM.line(p.x, p.y - R, p.x, p.y + R, 1, 2);
+  if (!p.bad) waves(p, R, t, true);
+}
+
+function drawSpreadPick(p, R, t) {
+  // Tres brazos en V que se abren y se cierran: respira en apertura, no en
+  // tamano, que es literalmente lo que el powerup le hace al disparo.
+  const open = 0.5 + Math.sin(t * 2.6) * 0.28;
+  const by = p.y + R * 0.7;
+  for (const k of [-1, 0, 1]) {
+    const a = -Math.PI / 2 + k * open;
+    VRAM.line(p.x, by, p.x + Math.cos(a) * R * 1.9, by + Math.sin(a) * R * 1.9, 1, 1);
+  }
+  if (!p.bad) waves(p, R, t, false);
+}
+
+function drawPiercePick(p, R, t) {
+  // Barra larga y fina girando sobre su eje: es la unica figura alargada de las
+  // cinco, y a cinco pixeles el largo es lo unico que sobrevive con seguridad.
+  // La barra tiene que salirse de sus propias ondas: a R*1.9 quedaba justo
+  // adentro del halo y las cinco figuras se veian como el mismo borron gris.
+  const a = t * 2.2, dx = Math.cos(a) * R * 3.0, dy = Math.sin(a) * R * 3.0;
+  VRAM.line(p.x - dx, p.y - dy, p.x + dx, p.y + dy, 1, 2);
+  if (!p.bad) waves(p, R, t, false);
+}
+
+function drawAnchorPick(p, R, t) {
+  // Cuadrado macizo, el unico que no gira ni emite ondas: no moverse en esos dos
+  // ejes es lo que se lee como peso. Pero late comprimiendose —algo tira de el
+  // hacia adentro—, porque estar del todo detenido ya significa infectado y no
+  // puede significar dos cosas a la vez.
+  //
+  // El medio lado sale de p.r y no de R, y llega hasta 0.82: asi las esquinas
+  // (k por raiz de dos) caen justo en p.r * PICKUP_BREATHE_MAX, que es el circulo
+  // con el que se agarra (§8.1). Con R encima del latido propio el cuadrado se
+  // salia de su propio hitbox, y un cuerpo dibujado fuera de lo que se calcula es
+  // exactamente el error que vino a sacar la colision por forma real.
+  const k = p.r * (0.70 + Math.sin(t * 3.4) * (p.bad ? 0 : 0.12));
+  VRAM.polyAt([{ x: -k, y: -k }, { x: k, y: -k }, { x: k, y: k }, { x: -k, y: k }],
+              p.x, p.y, 0, true, 1, 2);
 }
 
 // 'dt' es el del reloj de pared, no el de la partida: el fantasma es del vidrio,
@@ -2088,12 +2535,22 @@ function renderWorld(dt) {
   // si se fuera al vacio (§7.1). Todo el efecto es el exponente: k = 1 - t^n.
   // El tono baja con la misma k, asi que la cuantizacion la lleva de blanco a
   // gris claro, a gris oscuro y a nada, que son los unicos pasos que hay.
+  // Aviso de que se acaba: abanico y perforante se leen en las balas, asi que son
+  // las balas las que parpadean en sus ultimos segundos. Mismo gesto que la
+  // burbuja, en el elemento donde ese efecto vive.
+  let bk = 1;
+  if (G.ship) for (const key of ['spread', 'pierce']) {
+    const fx = G.ship.fx[key];
+    if (fx && fx.t < CFG.fxBlink && Math.sin(fx.t * 26) < 0) bk = 0.45;
+  }
   for (const b of G.bullets) {
-    const t = clamp(1 - b.life / b.max, 0, 1);
-    const k = 1 - Math.pow(t, CFG.bulletFade);
-    const half = b.len * k * 0.5;
+    const k = bulletK(b);                        // el mismo largo con el que colisiona
+    const half = bulletHalf(b);
+    // El parpadeo de "se acaba" APAGA la bala, no la acorta: el largo tiene que
+    // seguir siendo el que colisiona o el aviso movería el hitbox.
+    const v = k * bk;
     const dx = Math.cos(b.a) * half, dy = Math.sin(b.a) * half;
-    VRAM.line(b.x - dx, b.y - dy, b.x + dx, b.y + dy, k, k > 0.5 ? 2 : 1);
+    VRAM.line(b.x - dx, b.y - dy, b.x + dx, b.y + dy, v, v > 0.5 ? 2 : 1);
   }
   for (const p of G.pickups) drawPickup(p);
   for (const d of G.shards) {
@@ -2106,6 +2563,26 @@ function renderWorld(dt) {
   const s = G.ship;
   if (s && G.entry) drawEntryMark(s);
   if (s && s.alive) for (const cpy of shipCopies(s)) drawShip(s, cpy.x, cpy.y);
+  if (DBG.hitbox) drawHitboxes(s);
+}
+
+// Los hitboxes, apagados salvo que alguien los prenda a mano (DBG.hitbox = true
+// en la consola). No es andamiaje de un rato: que no existiera es la razon por
+// la que la bala fue un punto sin dimension toda la vida del proyecto y nadie
+// lo noto. Se dibuja con las mismas primitivas que el mundo, asi que lo que se
+// ve es literalmente lo que se calcula.
+function drawHitboxes(s) {
+  for (const b of G.bullets) {
+    const half = bulletHalf(b);
+    const dx = Math.cos(b.a) * half, dy = Math.sin(b.a) * half;
+    VRAM.line(b.x - dx, b.y - dy, b.x + dx, b.y + dy, 0.62, 1, 2);
+  }
+  for (const p of G.pickups) VRAM.circle(p.x, p.y, p.r * PICKUP_BREATHE_MAX, 0.34);
+  if (!s || !s.alive) return;
+  for (const cpy of shipCopies(s)) {
+    VRAM.polyAt(HULL_GRAB, cpy.x, cpy.y, s.a, true, 0.34, 1, 3);
+    VRAM.polyAt(HULL_DMG,  cpy.x, cpy.y, s.a, true, 0.62, 1, 2);
+  }
 }
 
 // La escuadra del centro: las cuatro esquinas del sitio adonde el autopiloto

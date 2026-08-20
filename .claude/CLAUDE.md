@@ -15,6 +15,8 @@ siempre el mismo y se recorre entero:
    node dev/demo-test.mjs
    node dev/trail-test.mjs
    node dev/lcd-test.mjs
+   node dev/pickup-test.mjs
+   node dev/collide-test.mjs
    ```
 
    Tardan minutos: hay que darles tiempo, no cortarlas por impaciencia. Una

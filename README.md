@@ -142,6 +142,51 @@ Las perillas están en `CFG` bajo `--- entrada de la nave ---`: `entryPad`,
 `entryGrace`, `entryMax`, y para lo que se ve, `entryTone`, `entryMark`,
 `readyBlink` y `readyHz`.
 
+## Con qué choca cada cosa
+
+Todo choca con **la forma que se ve**, no con un círculo que la envuelve. Las
+rocas siempre fueron su polígono exacto; la nave y la bala no, y eso producía dos
+mentiras bien visibles.
+
+La bala se probaba como **un punto**, aunque en pantalla es una raya de hasta diez
+unidades que tumbea sobre su centro. Un tiro que visualmente atravesaba la roca no
+le hacía nada. Ahora se prueba la raya entera, con el largo que tiene en ese
+frame: como se va encogiendo al apagarse, una bala moribunda pega menos que una
+recién salida, que es justo lo que se ve.
+
+La nave chocaba con un **círculo de radio 11** contra un casco de 27 × 20,25. Pero
+el casco no es redondo: el morro llega a 13,5 del centro y el flanco a 4,74. O sea
+que moría por rocas que le pasaban por el costado y sobrevivía roces de punta. El
+círculo era el doble de área que el casco de verdad.
+
+Ahora la nave usa su contorno, en dos tamaños distintos a propósito:
+
+|        | forma                     | para qué                        |
+| ------ | ------------------------- | ------------------------------- |
+| daño   | el contorno **encogido**  | morir tiene que ser siempre creíble |
+| agarre | el contorno **pelado**    | recoger no tiene que fallar por un flanco |
+
+Es el único par donde achicar el hitbox le juega **en contra** al jugador, y los
+recolectables ya son bastante raros como para además perderlos rozándolos. Chico
+para morir, honesto para recolectar.
+
+Los segmentos que se apagan al perder una vida no agujerean el hitbox: son el
+indicador de vidas, y una nave dañada más difícil de matar sería al revés de lo
+que cuenta.
+
+**El objeto es la línea central del trazo.** El nib es solo con qué gordura lo
+pinta el LCD, no parte de la cosa — y es lo que hace que el juego se juegue igual
+en cualquier pantalla. El mundo se mide en unidades propias y su alto vale siempre
+`baseHeight`, así que la nave mide 27 unidades en todos lados; un píxel encendido,
+en cambio, mide entre 3,3 y 4,5 unidades según lo ancha que sea la ventana.
+Colisionar "por los píxeles que se tocan" sería un juego distinto en cada monitor.
+`dev/collide-test.mjs` corre los mismos casos en dos pantallas con puntos de LCD
+un 38% distintos y exige el mismo veredicto en todos.
+
+`CFG.shipRadius` sigue existiendo pero **ya no es el hitbox**: es el radio de
+guarda de la justicia de spawn, donde conviene que sobre porque mide "cerca de la
+nave", no "tocando la nave".
+
 ## Partir meteoros
 
 Casi siempre una bala revienta la roca entera, pero entre el 5% y el 10% de los
@@ -167,6 +212,11 @@ Una mitad se puede volver a partir, pero con **la mitad de probabilidad** que su
 madre (`CFG.splitDecay`), así que la cadena se agota sola: un cuarto de roca ya
 parte con la cuarta parte de probabilidad.
 
+Y las mitades **pagan más pickup**: un 20 % por encima de lo que pagaría una roca
+entera del mismo tamaño (`CFG.shardDropBonus`). Partir es el tiro difícil y hasta
+ahora lo único que daba era más blancos que esquivar. El extra es plano, no se
+compone: dos cortes seguidos siguen pagando un 20 %, no un 44 %.
+
 ## Giro de las rocas
 
 Al nacer, cada roca gira poco y al azar: `CFG.meteorRotMax` es un giro de
@@ -187,27 +237,94 @@ aire entre las mitades recién cortadas) y `splitSpinGain/Max`.
 
 ## Recolectables
 
-Caen dos, y no se distinguen por color: en cuatro tonos el color no existe. El
+Caen cinco, y no se distinguen por color: en cuatro tonos el color no existe. El
 problema real es el tamaño. El cuerpo mide **2,3 puntos de LCD de radio**, o sea
 una figura de cinco por cinco, y a esa escala cualquier par de polígonos cae
-sobre los mismos píxeles. Así que se separan por tres ejes a la vez, que son los
-que sobreviven a cinco píxeles:
+sobre los mismos píxeles. Así que se separan por varios ejes a la vez, que son
+los que sobreviven a cinco píxeles:
 
-|        | escudo                 | reparación             |
-| ------ | ---------------------- | ---------------------- |
-| forma  | redonda y dispersa     | recta y plena          |
-| giro   | orbita                 | quieta                 |
-| ondas  | hacia afuera (irradia) | hacia adentro (absorbe)|
+|            | forma              | giro           | ondas                   |
+| ---------- | ------------------ | -------------- | ----------------------- |
+| escudo     | redonda y dispersa | orbita         | hacia afuera (irradia)  |
+| reparación | cruz recta y plena | quieta         | hacia adentro (absorbe) |
+| abanico    | tres brazos en V   | abre y cierra  | hacia afuera            |
+| perforante | barra alargada     | sobre su eje   | hacia afuera            |
+| ancla      | cuadrado macizo    | ninguno        | ninguna (late en tamaño)|
 
-El **escudo** es un núcleo con tres satélites dando vueltas: cuatro puntos
-sueltos que giran. Da seis segundos de invulnerabilidad, y mientras dura la nave
-se ve más apagada y con el contorno punteado.
+Los tres nuevos no dan más números: cambian **cómo** se juega. Duran ocho
+segundos, se apilan entre ellos y no se apilan consigo mismos.
+
+El **escudo** es un núcleo con tres satélites dando vueltas. Ya no da
+invulnerabilidad —eso era invisibilidad, no escudo—: pone una **burbuja** que se
+come **un** golpe y revienta, o se agota a los seis segundos. La burbuja se
+dibuja más grande que la nave pero **no agranda el blanco**: lo que choca sigue
+siendo `shipRadius`, porque agrandarlo haría chocar contra rocas que hoy se
+esquivan y eso se lee como «el escudo me mató».
 
 La **reparación** es una cruz gruesa alineada a los ejes —el símbolo de salud de
 toda la vida— y va sin girar a propósito: quieta se distingue más, y además una
 cruz que gira se convierte en una equis cada cuarto de vuelta y deja de ser una
 cruz. Devuelve la vida perdida y el contorno completo del casco. Sólo cae si hay
 algo que reparar.
+
+El **abanico** dispara tres balas en vez de una: cambia puntería por cobertura.
+La **perforante** atraviesa las rocas en lugar de morir en la primera, así que
+premia alinear el tiro. El **ancla** le quita la deriva a la nave: durante ocho
+segundos va exactamente a donde apunta, que en un juego llamado *My Space Drift*
+es el cambio de pilotaje más grande que hay.
+
+### Infectados
+
+Cualquier recolectable puede venir **infectado**: hace lo contrario de lo que
+promete y dura el 70 %. El escudo no protege y te cruza los mandos, la reparación
+no cura y te cruza los mandos, el abanico sortea cada ángulo y te deja sin
+puntería, la perforante apenas saca la bala del morro y el ancla te hace patinar.
+
+Se reconocen por dos marcas a la vez: una **fisura** encima de la figura y, sobre
+todo, que están **completamente detenidos** —no respiran, no giran, no emiten
+ondas—. No se finge un tirón a propósito: el juego tiene tope de cuadros y a
+veces los da de verdad, así que un *glitch* simulado se leería como falla de
+rendimiento y el jugador culparía al juego en vez de leer la señal. De ahí sale
+una regla dura para las cinco figuras: **ninguna limpia puede quedarse quieta**,
+o la infección deja de leerse.
+
+### Cuándo caen
+
+Siguen cayendo sólo al reventar una roca, con `dropChance` sesgada por tamaño y
+con el extra del 20 % de las mitades partidas (`shardDropBonus`).
+Encima va un **freno por saturación** que cuenta los *existentes* —los que la
+nave tiene puestos más los que siguen volando—: con dos cae la mitad y con tres
+no cae nada. Es realimentación negativa, y es lo que sostiene el promedio de uno
+sin necesidad de un reloj de aparición: cuanto más tenés, menos te toca.
+
+Y no se agarran de rebote. El pickup nace **inerte** y sólo se arma tras medio
+segundo con la nave fuera de su radio (`pickupArm`), porque nace justo donde
+acabás de tirar —muchas veces encima de la nave— y agarrarlo sin haberlo mirado
+era gratis mientras los dos eran regalos; con uno de cada seis infectado sería
+una trampa.
+
+Las perillas están en `CFG` bajo `--- pickup ---` y `--- efectos de estilo ---`:
+`dropChance`, `dropSizeBias`, `pickupArm`, `shieldRadius`, `pickupWeights`,
+`shardDropBonus`, `fxTime`, `fxBlink`, `infectChance`, `infectTimeMul`,
+`crowdedAt`, `crowdedMul`, `fxHardCap` y `fxSweep`.
+
+### Cómo se agarran
+
+Para agarrarlos, los cinco valen **el mismo radio**: el del cuerpo en el pico de
+su latido, contra el contorno pelado de la nave. Que sea el pico y no el valor
+del frame es a propósito —agarrar no puede depender de en qué parte de la
+respiración cayó el cuadro, y así nunca queda un punto encendido fuera del
+hitbox—. Los satélites del escudo, los brazos del abanico, la barra de la
+perforante y las ondas de todos **no cuentan**: lo que gira ataría el agarre a la
+fase de la rotación y dejaría unos más fáciles de recoger que otros sin ninguna
+razón. Las ondas son decoración.
+
+La cruz tampoco se toma literal: se agarra como un disco, porque si no habría que
+llegarle por el eje X o el Y y no en diagonal. Lo mismo vale para el cuadrado del
+ancla y la barra de la perforante.
+
+Ese contacto es la condición necesaria, no la suficiente: además el pickup tiene
+que estar **armado** (ver arriba).
 
 ## Estrellas del fondo
 
@@ -386,12 +503,25 @@ node dev/layout-test.mjs    # que el juego ocupe exactamente la pantalla visible
 node dev/demo-test.mjs      # que las dos demos sigan siendo lo que son
 node dev/trail-test.mjs     # que la estela no se estire si el aparato tironea
 node dev/lcd-test.mjs       # que la reticula no se desmadre de ancho en ninguna pantalla
+node dev/pickup-test.mjs    # los cinco recolectables, sus infectados y las reglas que los frenan
+node dev/collide-test.mjs   # que cada cosa choque con la forma que se ve, y en toda pantalla igual
 node dev/bot-score.mjs      # cuánto puntúa el bot con dos vidas: la vara de dificultad
 npx http-server -p 8080     # y abre /dev/audio-lab.html para escuchar los sonidos
 ```
 
 Los sonidos se sintetizan en el navegador (nada grabado, ningún archivo); las reglas de
 diseño están en `.claude/skills/lcd-audio/SKILL.md`.
+
+Para ver los hitboxes, en la consola del juego:
+
+```js
+DBG.hitbox = true      // dibuja el contorno de daño, el de agarre y la raya de cada bala
+```
+
+Se dibuja con las mismas primitivas que el mundo, así que lo que se ve es
+literalmente lo que se calcula. Que esto no existiera es la razón por la que la
+bala fue un punto sin dimensión durante toda la vida del proyecto sin que nadie
+lo notara.
 
 ### Publicar en itch.io
 
@@ -414,8 +544,9 @@ cambia sin tocar el archivo: `ITCH_TARGET=usuario/juego tools/publish-itch.sh`.
 El texto de la ficha —título, tagline, descripción y las casillas de itch— está en
 `marketing/itch/PAGE.md`, listo para copiar.
 
-**Una cosa que hay que decidir antes de publicar ahí:** el menú anuncia la dirección
-desde la que se está sirviendo el juego, y en itch.io eso es un dominio de CDN dentro
+**Una cosa que hay que decidir antes de publicar ahí:** la pantalla `CONNECT PHONE`
+anuncia la dirección desde la que se está sirviendo el juego, y en itch.io eso es un
+dominio de CDN dentro
 de un iframe (`v6p9d9t4.ssl.hwcdn.net/html/…`), o sea un renglón que no se puede
 teclear en un celular. Así que, o el emparejamiento no se anuncia en esa ficha, o el
 juego pasa a publicar siempre la dirección pública en vez de la suya (una línea en
