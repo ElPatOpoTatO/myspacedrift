@@ -11,10 +11,10 @@
  *     pasaban al costado y sobrevivia roces de punta.
  *
  * Y el requisito que los ata a los dos: el hitbox se mide en unidades de mundo,
- * nunca en puntos de LCD. Un pixel encendido mide entre 3,3 y 4,5 unidades segun
- * lo ancha que sea la ventana, asi que colisionar "por los pixeles" daria un
- * juego distinto en cada monitor. Por eso la ultima tanda corre los mismos casos
- * en una pantalla angosta y en una ancha y exige el mismo veredicto.
+ * nunca en puntos de LCD ni de pantalla. Por eso la ultima tanda corre los mismos
+ * casos en dos ventanas de forma bien distinta y exige el mismo veredicto: el
+ * lienzo se encoge al mayor 16:9 que entre, asi que una unidad de mundo mide
+ * distinta cantidad de px CSS en cada una, y la colision no puede enterarse.
  *
  * No juega ninguna partida: arma las poses a mano y llama a las funciones de
  * geometria directo, asi que no depende del azar ni del reloj.
@@ -183,10 +183,10 @@ function cases() {
 
 /* ------------------------------------------------------------------------- */
 
-// Dos pantallas elegidas para que caigan en ramas distintas de PIX: la cuadrada
-// se topa con las 144 filas del hardware, la panoramica con el piso de filas.
-// Entre una y otra el punto de LCD cambia un 38%, y el veredicto no tiene que
-// moverse ni un caso.
+// Dos ventanas de forma bien distinta: la cuadrada deja barras arriba y abajo, la
+// panoramica a los costados. La reticula es la misma en las dos (192x108, que para
+// eso esta bloqueado el aspecto), pero el lienzo mide muy distinto en px, y el
+// veredicto no tiene que moverse ni un caso.
 const VIEWPORTS = [
   ['cuadrada 800x600',   800,  600],
   ['panoramica 2560x1080', 2560, 1080],
@@ -199,7 +199,7 @@ for (const [name, width, height] of VIEWPORTS) {
   page.on('pageerror', e => { if (!KNOWN_NOISE(e)) errors.push(String(e)); });
   await page.goto(`${base}/index.html`, { waitUntil: 'load' });
   await page.waitForTimeout(300);
-  const info = await page.evaluate(() => ({ pix: PIX, w: W, h: H }));
+  const info = await page.evaluate(() => ({ pix: PIX, sc: SC, w: W, h: H }));
   const rows = await page.evaluate(`(${cases.toString()})()`);
   runs.push({ name, rows, errors, ...info });
   await page.close();
@@ -214,9 +214,15 @@ for (const [name, got, want] of primera.rows) {
 }
 
 console.log('\nel tamano de las cosas no depende de la pantalla');
-check(`el alto del mundo no cambia: ${primera.h} y ${segunda.h}`, primera.h === segunda.h);
-check(`y el punto de LCD si: ${primera.pix.toFixed(3)} contra ${segunda.pix.toFixed(3)}`,
-      Math.abs(primera.pix - segunda.pix) > 1e-6);
+check(`el mundo mide igual: ${primera.w.toFixed(1)}x${primera.h} y ${segunda.w.toFixed(1)}x${segunda.h}`,
+      primera.w === segunda.w && primera.h === segunda.h);
+check(`y la reticula tambien: PIX ${primera.pix.toFixed(3)} en las dos`,
+      Math.abs(primera.pix - segunda.pix) < 1e-9);
+// Lo que SI cambia es cuantos px CSS mide una unidad de mundo, porque el lienzo
+// se encoge al 16:9 que entre. Si algun dia la colision se colara al espacio de
+// pantalla, se colaria por aca.
+check(`lo que cambia es la escala en pantalla: ${primera.sc.toFixed(3)} contra ${segunda.sc.toFixed(3)}`,
+      Math.abs(primera.sc - segunda.sc) > 1e-6);
 for (let i = 0; i < primera.rows.length; i++) {
   const [name, a] = primera.rows[i];
   const b = segunda.rows[i][1];
