@@ -27,23 +27,25 @@ const q = fn => page.evaluate(fn);
 console.log('\nel menu');
 {
   const rows = await q(() => Menu.rows.slice());
-  check('tres filas', rows.length === 3, JSON.stringify(rows));
+  check('cuatro filas', rows.length === 4, JSON.stringify(rows));
   check('DEMO va entre PLAY y HIGH SCORES',
         rows[0] === 'PLAY' && rows[1] === 'DEMO' && rows[2] === 'HIGH SCORES', JSON.stringify(rows));
+  check('y el mando cierra la lista', rows[3] === 'CONNECT PHONE', JSON.stringify(rows));
 
-  // La tercera fila estira el cuadro y el codigo de emparejamiento tiene que
-  // haberse corrido. El reparto ya no son constantes: con el tope de columnas la
-  // pantalla puede quedar en 104 filas y el menu se reacomoda (§21.2), asi que
-  // se lee el reparto que publica el dibujo en vez de recalcular las posiciones.
+  // El cuadro tiene una fila mas que antes y ya no lleva el codigo de
+  // emparejamiento debajo: lo unico que hay entre el y el pie es la ayuda de
+  // navegacion. El reparto no son constantes —con el tope de columnas la
+  // pantalla puede quedar en 104 filas y el menu se reacomoda (§21.2)—, asi que
+  // se lee el que publica el dibujo en vez de recalcular las posiciones.
   const g = await q(() => ({ lh: LH(), gh: Font.GH, ...Menu.layout }));
   const boxBottom = g.boxTop + g.boxH;
-  check('el cuadro no pisa el codigo', boxBottom <= g.codeY,
-        `cuadro hasta ${boxBottom}, codigo en ${g.codeY}`);
-  check('la ayuda de navegacion tampoco', !g.help || boxBottom + 4 + g.gh <= g.codeY,
-        g.help ? `ayuda hasta ${boxBottom + 4 + g.gh}, codigo en ${g.codeY}` : 'no entraba, no se dibuja');
-  check('el codigo entra en el LCD', g.codeY + g.codeH <= g.lh, `${g.codeY + g.codeH} de ${g.lh}`);
-  check('y no pisa la franja de controles', g.codeY + g.codeH <= g.hintsY,
-        `codigo hasta ${g.codeY + g.codeH}, franja en ${g.hintsY}`);
+  check('el cuadro no le trepa al titulo', g.boxTop >= g.titleEnd,
+        `cuadro en ${g.boxTop}, titulo hasta ${g.titleEnd}`);
+  check('el cuadro entra en el LCD', boxBottom <= g.lh, `${boxBottom} de ${g.lh}`);
+  check('el cuadro no pisa la franja de controles', boxBottom <= g.hintsY,
+        `cuadro hasta ${boxBottom}, franja en ${g.hintsY}`);
+  check('la ayuda de navegacion tampoco', !g.help || boxBottom + 4 + g.gh <= g.hintsY,
+        g.help ? `ayuda hasta ${boxBottom + 4 + g.gh}, franja en ${g.hintsY}` : 'no entraba, no se dibuja');
 }
 
 console.log('\nla demo elegida');
