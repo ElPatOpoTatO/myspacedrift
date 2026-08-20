@@ -40,13 +40,26 @@
     color:#fff;font:32px ui-monospace,Menlo,Consolas,monospace;letter-spacing:10px;
     text-align:center;outline:none;border-radius:0}
   #ctrl input::placeholder{color:#545454}
-  #ctrl-pad{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:#000}
-  #ctrl-pad .pad{width:100%;max-width:100%;max-height:100%;display:flex;border:2px solid #a8a8a8}
-  #ctrl-pad .half{flex:1;display:flex;align-items:center;justify-content:center;
-    font:20px ui-monospace,Menlo,Consolas,monospace;color:#545454;
-    transition:background .05s linear}
-  #ctrl-pad .half:first-child{border-right:2px solid #545454}
-  #ctrl-pad .half.on{background:#a8a8a8;color:#000}
+  /* El mando es un mando: dos botones grandes, visibles y del alto de la
+     pantalla, que se encienden mientras el dedo los aprieta. Antes era una
+     miniatura de la pantalla del juego, con el mismo formato que la tele: el
+     dedo tenia que apuntar a una mitad en vez de apretar un boton, y en el
+     movil quedaba una franja apaisada flotando en el medio de la nada. */
+  #ctrl-pad{position:fixed;inset:0;display:flex;flex-direction:column;background:#000;
+    padding:calc(10px + env(safe-area-inset-top)) calc(10px + env(safe-area-inset-right))
+            calc(10px + env(safe-area-inset-bottom)) calc(10px + env(safe-area-inset-left))}
+  #ctrl-pad .row{flex:1;display:flex;gap:10px;min-height:0}
+  #ctrl-pad .btn{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    gap:14px;border:3px solid #a8a8a8;color:#a8a8a8;
+    font:13px ui-monospace,Menlo,Consolas,monospace;letter-spacing:4px;
+    transition:background .04s linear,color .04s linear}
+  #ctrl-pad .btn b{font-size:46px;line-height:1;font-weight:400}
+  #ctrl-pad .btn.on{background:#a8a8a8;color:#000}
+  /* El freno no es un boton: son los dos a la vez, igual que en el juego. La
+     pista va en su propia franja, debajo, y no se come el toque: el que aprieta
+     ahi tambien cuenta, porque el lado sale de la mitad de la pantalla. */
+  #ctrl-pad .tip{padding-top:12px;text-align:center;pointer-events:none;color:#545454;
+    font:11px ui-monospace,Menlo,Consolas,monospace;letter-spacing:2px}
   #ctrl[hidden],#ctrl-pad[hidden]{display:none}   /* hidden pierde contra display:flex */
 </style>
 <script src="https://unpkg.com/peerjs@1.5.5/dist/peerjs.min.js" defer></script>
@@ -1118,7 +1131,8 @@ const SHIP_SEGS = (() => {
 const DAMAGED_HIDE = [1, 6]; // segmentos que faltan tras perder la primera vida
 
 /* ============================ estado ============================ */
-const SCREEN = { MENU: 'MENU', PLAY: 'PLAY', DEMO: 'DEMO', DEAD: 'DEAD', INITIALS: 'INITIALS', SCORES: 'SCORES', ROTATE: 'ROTATE' };
+const SCREEN = { MENU: 'MENU', PLAY: 'PLAY', DEMO: 'DEMO', DEAD: 'DEAD', INITIALS: 'INITIALS',
+                 SCORES: 'SCORES', LINK: 'LINK', ROTATE: 'ROTATE' };
 let screen = SCREEN.MENU;
 let prevScreen = SCREEN.MENU;
 
@@ -2686,7 +2700,7 @@ function muteBox() {
 }
 function muteActive() {
   return screen === SCREEN.PLAY || screen === SCREEN.MENU || screen === SCREEN.DEMO
-      || screen === SCREEN.DEAD || screen === SCREEN.SCORES;
+      || screen === SCREEN.DEAD || screen === SCREEN.SCORES || screen === SCREEN.LINK;
 }
 function drawMuteButton() {
   const m = muteIcon();
@@ -2733,49 +2747,21 @@ function drawControlHints(y, tone, live) {
   }
 }
 
-// Codigo de emparejamiento del celular. SOLO en las pantallas quietas: durante
-// la partida no se dibuja nada (§20.2). Cada pantalla elige donde ponerlo, que
-// el sitio libre no es el mismo en todas.
-// En cuantos renglones cae la direccion con el ancho de AHORA. Vive aparte
-// porque drawMenu tiene que repartir el alto antes de dibujar nada: si el
-// reparto supusiera un renglon y la direccion saliera en dos, el codigo se
-// comeria la franja de controles (§21.2).
+// Direccion de emparejamiento del celular, repartida en renglones para el ancho
+// de AHORA. Vive aparte de quien la dibuja porque drawLink tiene que repartir el
+// alto antes de pintar nada: si el reparto supusiera un renglon y la direccion
+// saliera en dos, el codigo se comeria la franja de controles (§21.2).
 //
-// La direccion no entra de una sola linea en cualquier pantalla: con el rotulo
-// delante mide 281 puntos y el LCD no pasa de lcdCols, asi que se cortaba por
-// los dos lados justo el renglon que hay que tipear en el celular — el peor
-// sitio posible para que falte texto. Cuando no entra se parte por el primer
-// '/', que es donde la vista ya corta sola: el dominio arriba y el resto abajo.
-function linkRows(x, align) {
-  const st = Link.status();
-  if (st.error || st.linked || !st.code) return [];
+// No entra de una sola linea en cualquier pantalla: mide 245 puntos y el LCD no
+// pasa de lcdCols, asi que se cortaba por los dos lados justo el renglon que hay
+// que tipear en el celular — el peor sitio posible para que falte texto. Cuando
+// no entra se parte por el primer '/', que es donde la vista ya corta sola: el
+// dominio arriba y el resto abajo.
+function linkRows(room) {
   // el protocolo y el index.html sobran para tipear a mano en el celular
   const url = Link.url().replace(/^https?:\/\//, '').replace(/index\.html\?/, '?');
-  const room = align === 'center' ? LW - T : align === 'right' ? x - T / 2 : LW - x - T / 2;
   const cut = url.indexOf('/');
-  return (Font.width('PHONE ' + url, 1) <= room || cut <= 0)
-    ? ['PHONE ' + url]
-    : ['PHONE ' + url.slice(0, cut), url.slice(cut)];
-}
-
-// Alto del bloque entero: los renglones de la direccion mas el codigo debajo.
-// Con un solo renglon da T + GH*s, que es lo que valia antes de que se partiera.
-const linkCodeH = (rows, s) => (rows - 1) * Font.GH + T + Font.GH * s;
-
-function drawLinkCode(x, y, s, align) {
-  const st = Link.status();
-  align = align || 'left';
-  if (st.error) { text('LINK - ' + st.error, x, y, 1, align, 1); return; }
-  if (st.linked) {
-    if (performance.now() - st.linkedAt < 1600) text('CONTROLLER LINKED', x, y, 1, align, 2);
-    return;
-  }
-  if (!st.code) return;
-
-  const rows = linkRows(x, align);
-  for (let i = 0; i < rows.length; i++) text(rows[i], x, y + i * Font.GH, 1, align, 1);
-  // el codigo baja lo que ocupe la direccion: con un renglon queda donde estaba
-  text(st.code, x, y + (rows.length - 1) * Font.GH + T, s || 1, align, 2);
+  return (Font.width(url, 1) <= room || cut <= 0) ? [url] : [url.slice(0, cut), url.slice(cut)];
 }
 
 /* ------------------------------- pantallas ------------------------------ */
@@ -2801,34 +2787,39 @@ function tintBox(s) {
   return worldBox(x, 0, Math.max(8, right - x), 3 * T, 'TINT');
 }
 
+// Las opciones del menu. Viven aca arriba porque el reparto vertical necesita
+// saber cuantas filas hay antes de dibujar el cuadro.
+const MENU_ROWS = ['PLAY', 'DEMO', 'HIGH SCORES', 'CONNECT PHONE'];
+
 function drawMenu() {
   const cx = LW / 2;
 
   // Reparto vertical, ANTES de dibujar: el tamano del titulo sale de aca, no al
-  // reves. En 144 filas todo cae donde caia siempre: el cuadro en 5*T, la ayuda
-  // hasta 93 y el codigo en 12*T. Con el tope de columnas la pantalla puede
-  // quedar en 104 filas (§21.2) y ahi no entra todo.
+  // reves. La direccion y el codigo del mando ya no viven en esta pantalla — se
+  // mudaron a la suya (§20.3) — y es lo que le devolvio el aire: el cuadro
+  // respira en el medio en vez de quedar apretado contra el pie.
   //
-  // El orden en que se cede es por utilidad, no por gusto:
+  // Con el tope de columnas la pantalla puede quedar en 104 filas (§21.2), y
+  // ahi se cede por utilidad y no por gusto:
   //   1. la ayuda de navegacion, que repite lo que ya dice la franja de abajo;
-  //   2. el tamano del titulo, que es adorno;
-  //   3. el tamano del codigo, y solo si no queda otra.
-  // La direccion nunca se corta y el codigo nunca se saca: sin esos dos no hay
-  // con que emparejar el celular, que es lo unico que esta pantalla tiene que
-  // resolver.
+  //   2. el tamano del titulo, que es adorno.
+  // El cuadro de opciones no cede nunca: es lo unico que esta pantalla resuelve.
   const hintsY = LH() - 2 - Font.GH - safeY();
-  const boxH = 6 + 3 * 12;
-  // La direccion puede caer en dos renglones, y entonces el bloque crece: hay
-  // que repartir con los renglones de verdad, no con uno supuesto.
-  const rows = Math.max(1, linkRows(cx, 'center').length);
-  let ts, codeS, codeH, codeY, help, boxTop, titleEnd;
-  for (const [t, s] of [[titleScale(), 2], [1, 2], [1, 1]]) {
-    ts = t; codeS = s;
+  const boxH = 6 + MENU_ROWS.length * 12;
+  // Lo que hay que reservar para la ayuda de navegacion: su renglon, el aire de
+  // arriba y —esto es lo que faltaba— aire tambien por debajo. Pegada a la
+  // franja de controles quedan dos renglones de texto encimados que se leen
+  // como un bloque apretado, que es lo que esta pantalla vino a dejar de ser.
+  const helpH = 4 + Font.GH + 6;
+  let ts, help, boxTop, titleEnd, maxTop;
+  for (const [t, h] of [[titleScale(), true], [titleScale(), false], [1, false]]) {
+    ts = t; help = h;
     titleEnd = T + Font.GH * ts + 5;
-    codeH = linkCodeH(rows, s);
-    codeY = Math.min(12 * T, hintsY - 1 - codeH);
-    help = codeY - 3 - (4 + Font.GH) - boxH >= titleEnd;
-    boxTop = Math.min(5 * T, codeY - 3 - (help ? 4 + Font.GH : 0) - boxH);
+    maxTop = hintsY - 4 - (help ? helpH : 0) - boxH;
+    // Sin el codigo debajo, el sitio libre es todo el que va del titulo al pie:
+    // el cuadro se planta en el medio de ese hueco, nunca mas arriba de 5*T
+    // (donde caia siempre) ni mas abajo de lo que deja la franja de controles.
+    boxTop = Math.min(Math.max(5 * T, Math.round((titleEnd + maxTop) / 2)), maxTop);
     if (boxTop >= titleEnd) break;
   }
 
@@ -2839,10 +2830,9 @@ function drawMenu() {
   ctx.fillRect(Math.round(cx - tw / 2), T + Font.GH * ts + 3, tw, 1);
   if (Tint.osd > 0) text('TINT ' + Tint.name, cx, 3 * T + 6, 1, 'center', 2);
 
-  Menu.layout = { boxTop, boxH, codeY, codeH, hintsY, help, rows, codeS, ts, titleEnd };   // lo publica el dibujo, como las filas
-  menuBox(['PLAY', 'DEMO', 'HIGH SCORES'], cx, boxTop, 112, codeY - 3);
+  Menu.layout = { boxTop, boxH, hintsY, help, ts, titleEnd };   // lo publica el dibujo, como las filas
+  menuBox(MENU_ROWS, cx, boxTop, 112, help ? hintsY - 2 : 0);
   if (G.attract) text('DEMO', T / 2, T / 2, 1, 'left', 2);
-  else drawLinkCode(cx, codeY, codeS, 'center'); // el codigo se lee desde el sillon
   drawControlHints(hintsY, 1);
   drawMuteButton();
 }
@@ -2888,18 +2878,103 @@ function drawHud() {
   }
 }
 
+/* GAME OVER. Antes ponia cada cosa en una fila fija de la rejilla — el titulo en
+   3*T, el cuadro en 10*T — y eso solo cerraba con las 144 filas de la consola:
+   en una pantalla ancha, que baja a 104 (§21.2), el cuadro le trepaba a la
+   franja de controles y las opciones salian encima de BRAKE. Ademas arrancaba
+   con la direccion de emparejamiento en la esquina, que se cruzaba con el
+   titulo y no la mira nadie justo cuando acaba de morir: eso vive ahora en su
+   propia pantalla (§20.3).
+   Asi que se reparte, como el menu: el bloque de abajo se apoya sobre la franja
+   y el resto se acomoda en lo que sobra. */
 function drawDead() {
   const cx = LW / 2;
-  text('GAME OVER', cx, 3 * T, 2, 'center', 3);
-  text(String(Math.floor(G.score)).padStart(6, '0'), cx, 6 * T, 2, 'center', 3);
-  text('LEVEL ' + G.level, cx, 8 * T + 6, 1, 'center', 2);
-  if (hs.pending) {
-    text('NEW HIGH SCORE', cx, 11 * T, 1, 'center', blink(180) ? 3 : 1);
-  } else {
-    menuBox(['PLAY AGAIN', 'MENU'], cx, 10 * T, 112);
+  const hintsY = LH() - 2 - Font.GH - safeY();
+  const top = safeY() + T / 2;
+  // Abajo va el cuadro de opciones o, mientras se decide si hay iniciales que
+  // pedir, el aviso de record que lo reemplaza. Los dos ocupan lo mismo y el
+  // aviso va centrado en ese hueco: asi el marcador no pega un salto cuando el
+  // aviso deja paso al cuadro, y el aviso no queda pegado a la franja de abajo.
+  const blockH = 6 + 2 * 12;
+  const helpH = 4 + Font.GH + 6;        // con aire por debajo, como en el menu
+
+  // Se cede en el mismo orden que en el menu: primero la ayuda de navegacion
+  // (la franja de abajo ya dice lo mismo) y despues el tamano de los numerones.
+  let s, help, blockTop, gap;
+  for (const [t, h] of [[2, true], [2, false], [1, false]]) {
+    s = t; help = h && !hs.pending;
+    blockTop = hintsY - 4 - blockH - (help ? helpH : 0);
+    gap = Math.floor((blockTop - top - (2 * Font.GH * s + Font.GH)) / 4);
+    if (gap >= 4) break;
   }
-  drawLinkCode(T / 2, 2, 1);
-  drawControlHints(LH() - 2 - Font.GH - safeY(), 1);   // recien murio: es cuando mas sirven
+  gap = Math.max(2, gap);
+
+  let y = top + gap;
+  text('GAME OVER', cx, y, s, 'center', 3);
+  y += Font.GH * s + gap;
+  text(String(Math.floor(G.score)).padStart(6, '0'), cx, y, s, 'center', 3);
+  y += Font.GH * s + gap;
+  text('LEVEL ' + G.level, cx, y, 1, 'center', 2);
+
+  Menu.layout = { top, gap, s, help, blockTop, blockH, hintsY, statsEnd: y + Font.GH };
+  if (hs.pending) text('NEW HIGH SCORE', cx, blockTop + Math.round((blockH - Font.GH) / 2),
+                       1, 'center', blink(180) ? 3 : 1);
+  else menuBox(['PLAY AGAIN', 'MENU'], cx, blockTop, 112, help ? hintsY - 2 : 0);
+  drawControlHints(hintsY, 1);   // recien murio: es cuando mas sirven
+  drawMuteButton();
+}
+
+/* Pantalla del mando (§20.3). La direccion y el codigo viven aca y solo aca.
+   Antes iban al pie del menu y en la esquina del GAME OVER: en el menu se
+   comian el alto que necesitaba el cuadro de opciones y en el GAME OVER se
+   cruzaban con el titulo, y en las dos aparecian sin que nadie los pidiera.
+   Aca los busca quien quiere el mando, que es cuando sirven, y ademas hay sitio
+   para contar el estado entero del enlace: conectado, esperando, o el error que
+   devolvio el servidor. */
+const LINK_TITLE = 'CONNECT PHONE';
+
+function drawLink() {
+  const cx = LW / 2;
+  const st = Link.status();
+  const hintsY = LH() - 2 - Font.GH - safeY();
+  const top = safeY() + T;
+  const boxH = 6 + 12;                                  // una sola fila: BACK
+  const boxTop = hintsY - 4 - boxH;
+  const rows = linkRows(LW - 2 * T);                    // la direccion, en uno o dos renglones
+  const label = st.error   ? 'LINK - ' + st.error
+              : st.linked  ? 'CONTROLLER LINKED'
+              :              'AND TYPE THIS CODE';
+
+  // Reparto antes de dibujar, como en el menu. Lo primero que se achica es el
+  // titulo, que es adorno; el codigo es lo ultimo, porque es lo unico que hay
+  // que leer desde el sillon. Nada se saca: sin la direccion y sin el codigo
+  // esta pantalla no sirve para lo unico que hace.
+  let ts = 1, cs = 1, gap = 2;
+  for (const [t, c] of [[2, 3], [1, 3], [1, 2], [1, 1]]) {
+    if (Font.width(LINK_TITLE, t) > LW - 5 * T) continue;   // el boton de sonido manda en esa esquina
+    ts = t; cs = c;
+    const need = Font.GH * (ts + 1 + rows.length + 1 + cs);
+    gap = Math.floor((boxTop - 4 - top - need) / 3);
+    if (gap >= 3) break;
+  }
+  gap = Math.max(2, gap);
+
+  let y = top;
+  text(LINK_TITLE, cx, y, ts, 'center', 3);
+  y += Font.GH * ts + gap;
+  text('OPEN ON YOUR PHONE', cx, y, 1, 'center', 2);
+  y += Font.GH;
+  for (const r of rows) { text(r, cx, y, 1, 'center', 3); y += Font.GH; }
+  y += gap;
+  text(label, cx, y, 1, 'center', 2);
+  y += Font.GH;
+  // Sin codigo todavia (el handshake tarda, o no hay internet) se dibujan los
+  // huecos: la pantalla no cambia de forma cuando el numero llega.
+  text(st.code || '------', cx, y, cs, 'center', st.code ? 3 : 1);
+
+  Menu.layout = { top, gap, ts, cs, rows: rows.length, boxTop, boxH, hintsY, codeEnd: y + Font.GH * cs };
+  menuBox(['BACK'], cx, boxTop, 112);
+  drawControlHints(hintsY, 1);
   drawMuteButton();
 }
 
@@ -2986,6 +3061,7 @@ function activate(label) {
   if (label === 'DEMO') { Demo.reset(); startGame('demo'); return true; }
   // Entrando desde el menu no hay partida recien jugada: no hay fila propia que marcar.
   if (label === 'HIGH SCORES') { hs.fromRun = false; hs.mine = -1; screen = SCREEN.SCORES; return true; }
+  if (label === 'CONNECT PHONE') { screen = SCREEN.LINK; Input.lastTouch = performance.now(); return true; }
   if (label === 'BACK') { screen = SCREEN.MENU; Input.lastTouch = performance.now(); return true; }
   if (label === 'PLAY AGAIN') { startGame('play'); return true; }
   if (label === 'MENU') { screen = SCREEN.MENU; Input.lastTouch = performance.now(); return true; }
@@ -3139,6 +3215,7 @@ function frame(now) {
   else if (screen === SCREEN.DEAD) drawDead();
   else if (screen === SCREEN.INITIALS) drawInitials();
   else if (screen === SCREEN.SCORES) drawScores();
+  else if (screen === SCREEN.LINK) drawLink();
   else if (screen === SCREEN.ROTATE) drawRotate();
   uiEnd();
 
@@ -3151,7 +3228,8 @@ function frame(now) {
     Input.lastTouch = now;
     if (screen === SCREEN.DEMO || (screen === SCREEN.MENU && G.attract)) {
       quitAttract();                     // tocar un motor tambien corta la demo
-    } else if (screen === SCREEN.MENU || screen === SCREEN.DEAD || screen === SCREEN.SCORES) {
+    } else if (screen === SCREEN.MENU || screen === SCREEN.DEAD || screen === SCREEN.SCORES
+            || screen === SCREEN.LINK) {
       if (nav.move && Menu.move(nav.move)) Sfx.ui();
       if (nav.select) { buzz(15); activate(Menu.chosen()); }
     }
@@ -3178,7 +3256,7 @@ function frame(now) {
           quitAttract();
         }
       } else handleMenuTap(tap);
-    } else if (screen === SCREEN.SCORES || screen === SCREEN.DEAD) {
+    } else if (screen === SCREEN.SCORES || screen === SCREEN.DEAD || screen === SCREEN.LINK) {
       handleMenuTap(tap);
     }
   }
@@ -3274,7 +3352,6 @@ const Link = (() => {
         state.linked = true;
         state.linkedAt = performance.now();
         state.error = '';
-        sendAspect();
         Sfx.init(); Sfx.resume();
         Input.lastTouch = performance.now();
       });
@@ -3283,8 +3360,6 @@ const Link = (() => {
       c.on('error', unlink);
     });
   }
-
-  function sendAspect() { if (conn && conn.open) conn.send({ t: 'ar', ar: W / H }); }
 
   // los punteros remotos viven con llaves de texto para no chocar con el
   // puntero del Magic Remote ni con dedos locales
@@ -3311,6 +3386,7 @@ const Link = (() => {
       for (const p of m.a) Input.pointers.set('r' + p[0], { x: p[1] * W, y: p[2] * H });
       // mientras haya dedos, el celular late; el silencio es lo que se vigila
       heldSince = m.a.length ? performance.now() : 0;
+      if (m.a.length) Input.lastTouch = performance.now();   // el mando en la mano cuenta como toque
     } else if (m.t === 't') {              // tap: sirve para los menus
       Input.tapPos = { x: m.x * W, y: m.y * H };
       Input.lastTouch = performance.now();
@@ -3321,7 +3397,6 @@ const Link = (() => {
   function screenMode() {
     if (!window.Peer) { state.error = 'no internet'; return; }
     openPeer();
-    window.addEventListener('resize', () => setTimeout(sendAspect, 150));
   }
 
   /* ------------------------ lado CONTROL (celular) ---------------------- */
@@ -3330,7 +3405,7 @@ const Link = (() => {
 
     const root  = el('div', 'ctrl');
     const title = el('h1', null, root);      title.textContent = 'MY SPACE DRIFT';
-    const hint  = el('p', null, root);       hint.textContent  = 'code shown on the tv';
+    const hint  = el('p', null, root);       hint.textContent  = 'code on the tv: menu \u2192 connect phone';
     const input = el('input', 'ctrl-code', root);
     const msg   = el('p', 'ctrl-msg', root);
     input.type = 'text'; input.inputMode = 'numeric'; input.maxLength = 6;
@@ -3339,57 +3414,63 @@ const Link = (() => {
 
     if (!window.Peer) { msg.textContent = 'no internet — cannot pair'; input.disabled = true; return; }
 
-    const pad  = el('div', 'ctrl-pad');
+    // Dos botones y nada mas, como el mando de cualquier juego: IZQUIERDA y
+    // DERECHA, del alto de la pantalla, encendidos mientras el dedo aprieta.
+    // Los dos juntos son el freno en la partida y "elegir" en los menus (§4.2),
+    // asi que un tercer boton no hace falta.
+    const pad = el('div', 'ctrl-pad');
     pad.hidden = true;
-    const rect = el('div', null, pad); rect.className = 'pad';
-    const halves = [el('div', null, rect), el('div', null, rect)];
-    halves[0].className = halves[1].className = 'half';
-    halves[0].textContent = 'L'; halves[1].textContent = 'R';
-    let aspect = 16 / 9;
+    const row = el('div', null, pad);
+    row.className = 'row';
+    const btns = [0, 1].map(i => {
+      const b = el('div', null, row);
+      b.className = 'btn';
+      const g = document.createElement('b');
+      g.textContent = i ? '\u25b6' : '\u25c0';
+      b.appendChild(g);
+      b.appendChild(document.createTextNode(i ? 'RIGHT' : 'LEFT'));
+      return b;
+    });
+    const tip = el('div', null, pad);
+    tip.className = 'tip';
+    tip.textContent = 'BOTH \u2014 BRAKE';
 
-    function layoutPad() {
-      const w = window.innerWidth, h = window.innerHeight;
-      const useW = Math.min(w, h * aspect);
-      rect.style.width  = useW + 'px';
-      rect.style.height = (useW / aspect) + 'px';
-    }
-    window.addEventListener('resize', layoutPad);
-    window.addEventListener('orientationchange', () => setTimeout(layoutPad, 150));
-
-    const pts = new Map();
+    // Cada dedo se manda como un punto en el centro del lado que aprieta. Para
+    // la TV es identico a un dedo apoyado en esa mitad de su pantalla (§20), de
+    // modo que el juego no se entera de que el mando cambio de forma.
+    const pts = new Map();                   // pointerId -> 0 izquierda, 1 derecha
     const sendPts = () => {
+      const on = [false, false];
+      for (const side of pts.values()) on[side] = true;
+      // las luces primero: el boton responde aunque el enlace se haya caido
+      btns[0].classList.toggle('on', on[0]);
+      btns[1].classList.toggle('on', on[1]);
       if (!conn || !conn.open) return;
-      conn.send({ t: 'p', a: [...pts.entries()].map(([i, p]) => [i, p.x, p.y]) });
-      halves[0].classList.toggle('on', [...pts.values()].some(p => p.x < 0.5));
-      halves[1].classList.toggle('on', [...pts.values()].some(p => p.x >= 0.5));
+      conn.send({ t: 'p', a: [...pts.entries()].map(([i, side]) => [i, side ? 0.75 : 0.25, 0.5]) });
     };
-    const norm = e => {
-      const r = rect.getBoundingClientRect();
-      return {
-        x: clamp((e.clientX - r.left) / r.width,  0, 0.999),
-        y: clamp((e.clientY - r.top)  / r.height, 0, 0.999)
-      };
-    };
+    // El lado sale de la mitad de la pantalla, no del boton que recibio el
+    // toque: asi el hueco entre los dos y el margen del aparato tambien cuentan,
+    // y arrastrar el dedo de un motor al otro cambia de motor sin levantarlo.
+    const sideAt = x => (x < window.innerWidth / 2 ? 0 : 1);
 
-    rect.addEventListener('pointerdown', e => {
-      rect.setPointerCapture && rect.setPointerCapture(e.pointerId);
-      const p = norm(e);
-      pts.set(e.pointerId, p);
-      if (conn && conn.open) conn.send({ t: 't', x: p.x, y: p.y });
+    pad.addEventListener('pointerdown', e => {
+      // la captura es una ayuda, no un requisito: si el navegador la rechaza el
+      // boton tiene que responder igual, asi que no puede tirar abajo el resto
+      try { pad.setPointerCapture(e.pointerId); } catch (err) {}
+      pts.set(e.pointerId, sideAt(e.clientX));
       sendPts();
       e.preventDefault();
     }, { passive: false });
-    rect.addEventListener('pointermove', e => {
+    pad.addEventListener('pointermove', e => {
       if (!pts.has(e.pointerId)) return;
-      pts.set(e.pointerId, norm(e));
-      sendPts();
+      const side = sideAt(e.clientX);
+      if (pts.get(e.pointerId) !== side) { pts.set(e.pointerId, side); sendPts(); }
     }, { passive: false });
     const up = e => { if (pts.delete(e.pointerId)) sendPts(); };
-    for (const t of ['pointerup', 'pointercancel']) {
-      rect.addEventListener(t, up);
-      window.addEventListener(t, up);        // por si el up cae fuera del pad
+    for (const t of ['pointerup', 'pointercancel', 'lostpointercapture']) {
+      pad.addEventListener(t, up);
+      window.addEventListener(t, up);        // por si el up cae fuera del mando
     }
-    rect.addEventListener('lostpointercapture', up);
     window.addEventListener('touchend', e => { if (e.touches && !e.touches.length && pts.size) { pts.clear(); sendPts(); } }, { passive: true });
 
     // Soltar todo y avisarle a la TV. Bloquear la pantalla o cambiar de app
@@ -3419,10 +3500,8 @@ const Link = (() => {
           try { localStorage.setItem(LS_KEY, code); } catch (e) {}
           root.hidden = true; pad.hidden = false;
           wait = 3000;
-          layoutPad();
           navigator.wakeLock && navigator.wakeLock.request('screen').catch(() => {});
         });
-        conn.on('data', m => { if (m && m.t === 'ar') { aspect = m.ar; layoutPad(); } });
         conn.on('close', () => reset('disconnected', true));
         conn.on('error', () => reset('connection failed', true));
       });

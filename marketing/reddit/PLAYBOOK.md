@@ -29,6 +29,10 @@ formality — a fresh account posting a link to its own project is the exact pat
 were built to catch, and the removal is usually silent. You won't be told; the post will just get no
 traffic.
 
+**This is where the first attempt stopped.** The account had ~1 karma against a ~25 requirement. The
+account is old enough, so the age half of the gate already passes and only comment karma is missing.
+[`KARMA.md`](KARMA.md) has the plan to fix it, and the two ungated places to post in the meantime.
+
 ---
 
 ## 2. Pick the moment
