@@ -22,7 +22,8 @@
  *   split   una roca partiendose en dos, con su polvo. Es la mecanica que no se
  *           ve en una foto cualquiera porque dura un instante.
  *   tint    el mismo menu con el cristal verde: el easter egg del tinte, y la
- *           unica foto en color de todas.
+ *           unica foto en color de todas. Se ve el vidrio, no el nombre del
+ *           tinte: hoy el cuadro del menu lo tapa en toda pantalla.
  *   phone   el celular haciendo de mando, que es la mitad del juego y no sale en
  *           ninguna captura de la tele.
  *
@@ -40,13 +41,15 @@ const OUT = join(ROOT, 'media');
 // suyo. La foto del mando ensena la pantalla, no un emparejamiento concreto.
 const CODE = '337282';
 
-// 576 = 144 filas por 4, o sea cada punto del LCD en cuatro pixeles enteros
-// (igual que capture-media.mjs). El campo va en 4:3, porque el mundo mide
-// siempre lo mismo de alto y cuanto mas ancha la ventana mas vacio entra y mas
-// chica se ve la nave; el menu va en 16:9, que es la forma de la tele desde la
-// que se mira.
-const TV    = { width: 768, height: 576 };
-const WIDE  = { width: 1024, height: 576 };
+// Una sola ventana para todo. La reticula es 192x108 en cualquier aparato
+// (§21.2), asi que ya no hay un 4:3 que muestre mas filas ni un 16:9 que muestre
+// mas mundo: todas las pantallas del juego se ven igual y elegir forma de
+// ventana solo cambia el tamano del punto.
+//
+// 960x540 es 16:9 exacto —lo mismo que la reticula— y da 960/192 = 5 pixeles por
+// punto, enteros. Cualquier otra forma se llena de negro arriba y abajo, porque
+// el lienzo se encoge al mayor 16:9 que entre.
+const TV    = { width: 960, height: 540 };
 const PHONE = { width: 390, height: 844 };
 
 /* El juego se congela EN el cuadro que sirve, y ademas se prueba DESPUES de que
@@ -323,12 +326,16 @@ if (want('split')) {
 
 /* --------- 4) el tinte: el mismo menu con el cristal verde --------- */
 if (want('tint')) {
-  // Va en 4:3 y no en 16:9 como shot-menu.png por una razon concreta: el nombre
-  // del tinte se dibuja debajo del titulo, y en 16:9 el reparto del alto sube el
-  // cuadro del menu hasta taparlo (§21.2). Con las medidas de drawMenu: en 4:3 el
-  // cuadro se planta en la fila 40 y el nombre, que ocupa de la 30 a la 36, queda
-  // libre; en 16:9 el cuadro sube a la 29 y le pasa por encima. El color se ve
-  // igual en las dos, pero la foto que explica el easter egg es esta.
+  // Va en la misma ventana que las demas, y lo que se ve es el VIDRIO, no el
+  // nombre del tinte. Antes esta foto iba aparte, en 4:3, para pescar el cartel
+  // 'TINT GREEN': con la reticula vieja el alto cambiaba con la pantalla y en
+  // 4:3 (144 filas) el cuadro del menu caia en la fila 40, dejandolo libre.
+  //
+  // Con la reticula clavada en 192x108 eso se acabo: el cuadro empieza siempre
+  // en la fila 24 y el cartel ocupa de la 30 a la 37, o sea que queda tapado en
+  // TODA pantalla —drawMenu lo dibuja antes que el cuadro— y ya no hay ventana
+  // desde la que fotografiarlo. El easter egg sigue ahi y el color se ve; lo que
+  // no se puede enseñar es como se llama.
   const page = await open(TV);
   await page.evaluate(() => {
     Sfx.quiet = true;

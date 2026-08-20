@@ -73,30 +73,34 @@ dejan mal no se juega.
 | --- | --- |
 | Kind of project | HTML |
 | Uploads | el zip de `butler` marcado **This file will be played in the browser** |
-| Embed | 768 × 576, *Click to launch in fullscreen*, **Mobile friendly** activado |
+| Embed | 960 × 540, *Click to launch in fullscreen*, **Mobile friendly** activado |
 | Genre | Action |
 | Tags | `arcade`, `asteroids`, `game-boy`, `retro`, `pixel-art`, `one-button`, `high-score`, `html5` |
 | Release status | Prototype / In development |
 | Pricing | Free |
 
-768 × 576 no es una medida elegida por estética: es la única que le da al juego las
-144 filas enteras **y** el punto en píxeles enteros. El tamaño del punto sale del eje
-que apriete —`PIX = min(lcdRows/H, max(lcdCols/W, lcdRowsMin/H))`— y en una ventana
-ancha manda el tope de columnas, así que el alto del LCD se desploma:
+960 × 540 sale de dos hechos del juego, no del gusto.
 
-| ventana | LCD que queda | el punto mide |
+**Uno: la pantalla del juego es 16:9, siempre.** La retícula del LCD está clavada en
+192 × 108 puntos en cualquier aparato —`PIX = 108/480 = 0,225`, y `192/0,225 = 853,33`,
+que es 16/9 exacto—, y el lienzo se encoge al mayor 16:9 que entre en la ventana. En una
+ventana de otra forma el juego no muestra más ni menos: deja negro arriba y abajo. Como
+el fondo del juego ya es negro no se lee como barras, pero es sitio de la ficha que no
+enseña nada.
+
+**Dos: el punto tiene que caer entero.** Si no, la retícula cojea —celdas de 5 píxeles
+al lado de celdas de 6— y se ensucia justo lo que hace reconocible al juego. O sea que
+el ancho tiene que ser múltiplo de 192:
+
+| ventana | el punto | |
 | --- | --- | --- |
-| **768 × 576** (4:3) | **192 × 144** | **4 × 4 px exactos** |
-| 800 × 600 (4:3) | 192 × 144 | 4,167 px — la retícula cojea |
-| 1024 × 576 (16:9) | 200 × 113 | 5,12 × 5,097 px — cojea, y faltan 31 filas |
+| 768 × 432 | 4 × 4 px | chica para una ficha |
+| **960 × 540** | **5 × 5 px** | la misma medida que la portada |
+| 1152 × 648 | 6 × 6 px | si querés más grande, esta es la siguiente que cierra |
+| 1024 × 576 | 5,33 px | 16:9, pero cojea |
 
-Las 144 filas son las de la Game Boy y son las que hacen que el menú entre entero con
-su línea de ayuda; en 16:9 esa línea es lo primero que el reparto sacrifica (por eso
-`shot-tint.png` va en 4:3). Y 4 píxeles por punto es la misma medida con la que se
-sacan las capturas, así que lo que se ve en la ficha es lo que se ve en las fotos.
-
-> `marketing/itch-io.md` dice 800 × 600. Da las mismas 192 × 144 filas, así que no
-> está mal; 768 × 576 sólo agrega que el punto caiga entero.
+Cualquiera de las tres primeras sirve; 960 × 540 es la del medio y comparte el punto de
+5 píxeles con la portada, así que la ficha entera se ve dibujada a la misma escala.
 
 ## Antes de publicar: la dirección del mando
 

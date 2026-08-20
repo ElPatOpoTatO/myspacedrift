@@ -22,7 +22,11 @@
   html,body{width:100%;height:100vh;height:100dvh;overflow:hidden;background:#000;
     -webkit-user-select:none;user-select:none;-webkit-touch-callout:none;
     -webkit-tap-highlight-color:transparent;touch-action:none;overscroll-behavior:none}
-  canvas{display:block;width:100%;height:100%;touch-action:none;image-rendering:pixelated}
+  /* El lienzo esta clavado en 16:9 y lo mide resize(), no el CSS. Va centrado y
+     lo que sobra de ventana queda en el negro del body: la pantalla apagada
+     alrededor del vidrio, que es lo que hace cualquier aparato de resolucion fija. */
+  body{display:flex;align-items:center;justify-content:center}
+  canvas{display:block;touch-action:none;image-rendering:pixelated}
 
   /* Sonda para leer los margenes seguros (notch, isla, barra de gestos) desde JS. */
   #safe{position:fixed;top:0;left:0;width:0;height:0;pointer-events:none;visibility:hidden;
@@ -104,27 +108,29 @@ const CFG = {
   // negro. El verde famoso era el tinte del vidrio, no la paleta del juego, asi
   // que un juego nativo se disena en estos cuatro y nada mas.
   gbPalette:     ['#000000', '#545454', '#a8a8a8', '#ffffff'],   // de oscuro a claro
-  lcdRows:       144,            // exactamente las filas de la Game Boy
-  // Tope de columnas. La consola tenia 160 y aca el ancho no puede ser fijo,
-  // porque el lienzo llena la pantalla y hay teles de 16:9, portatiles de 16:10
-  // y moviles de 21:9. Lo que si puede es tener techo: pasado el tope el punto
-  // se agranda en vez de multiplicarse, asi que ninguna pantalla pasa de aca.
+  // La rejilla del LCD es FIJA y de aca sale todo lo demas: el ancho del mundo,
+  // el tamano del punto y la relacion de aspecto (192/108 = 16:9 exacto). El
+  // lienzo se encoge al mayor 16:9 que entre en la ventana y lo que sobra queda
+  // en negro, para que el juego se vea y se juegue igual en cualquier aparato.
+  //
+  // Y 192x108 no es una eleccion, es la unica que cabe. 16:9 exacto pide filas
+  // multiplo de 9, y entre las dos restricciones que ya existian solo queda una:
+  //   - por arriba, ~200 columnas. La consola tenia 160 y mas de eso deja de
+  //     verse pixelado: se ve fino. 208x117 ya se pasa.
+  //   - por abajo, 104 filas, que es donde la interfaz deja de entrar: a 96 la
+  //     linea de ayuda del menu se monta sobre la franja de controles. 176x99
+  //     la rompe.
   // 160 clavado se probo y no da: la nave queda en 5 puntos y es una manchita.
-  lcdCols:       200,
-  // Piso de filas. Agrandar el punto baja las filas, y por debajo de aca la
-  // interfaz deja de entrar: a 96 la linea de ayuda del menu se monta sobre la
-  // franja de controles. En una pantalla mas ancha que lcdCols/lcdRowsMin el
-  // piso le gana al tope y el ancho vuelve a subir un poco: es a proposito,
-  // vale mas una interfaz que entra que el ancho clavado.
-  lcdRowsMin:    104,
+  lcdCols:       192,
+  lcdRows:       108,
   // Tope de cuadros: el DMG dibujaba 4194304/70224 = 59.7275 pantallas por
   // segundo, y ese es el techo. Un movil de 120 o 144 Hz sin tope se ve "de
   // mas", como video suave, y no como la maquinita. 0 = sin tope (§2.1).
   gbHz:          4194304 / 70224,
   // El mundo se mide en unidades propias y su ALTO vale siempre baseHeight,
-  // pase lo que pase con la pantalla real. Lo unico que cambia con el aparato
-  // es cuanto ancho se ve. Sin esto el punto del LCD cambiaria de tamano y la
-  // nave encogeria en las pantallas grandes (§21.2).
+  // pase lo que pase con la pantalla real. El ancho sale de la rejilla, asi que
+  // tampoco cambia: lo unico que cambia con el aparato es el tamano de las
+  // barras negras que quedan alrededor (§21.2).
   baseHeight:    480,
   tile:          8,             // la rejilla de 8x8 a la que se alinea toda la interfaz
   lcdGain:       1.0,            // la escena ya se dibuja en los tonos de la paleta
@@ -626,6 +632,11 @@ let W = 0, H = 0, Wpx = 0, Hpx = 0, SC = 1, DPR = 1, PIX = 1;
 // Margenes seguros del aparato (notch, isla dinamica, barra de gestos). El lienzo llega
 // hasta el borde fisico; solo el HUD se aparta, para no escribir debajo del recorte.
 const SAFE = { t: 0, r: 0, b: 0, l: 0 };
+// Mitad de barra negra a cada lado del lienzo, en px CSS. Los margenes seguros
+// son de la VENTANA, y el lienzo ya no llega a sus bordes: del recorte solo tapa
+// lo que le sobre a la barra. Restarla devuelve sitio de HUD justo en los
+// aparatos donde mas escasea, que son los que tienen notch.
+const BAR = { x: 0, y: 0 };
 const safeEl = document.getElementById('safe');
 
 function resize() {
@@ -642,19 +653,26 @@ function resize() {
     SAFE.b = parseFloat(s.paddingBottom) || 0;
     SAFE.l = parseFloat(s.paddingLeft) || 0;
   }
+  // La rejilla manda y el mundo sale de ella, no al reves (§21.2). Los tres
+  // numeros son constantes, asi que el juego es identico en todos lados:
+  //   PIX = 108/480 = 0,225   y   W = 192/0,225 = 853,33  ->  W/H = 16/9 exacto
+  // Y cae redondo: W*PIX da 192 clavado, sin arrastre de redondeo.
   H = CFG.baseHeight;                             // el alto del mundo NO cambia nunca
-  SC = Hpx / H;                                   // px CSS por unidad de mundo
-  W = Wpx / SC;                                   // ... solo cambia cuanto ancho se ve
-  // El eje que apriete pone el tamano del punto: el alto en una pantalla
-  // angosta (144 filas), el tope de columnas en una ancha, y el piso de filas
-  // corta al tope cuando la pantalla es tan ancha que ya no entraria el
-  // menu (§21.2).
-  PIX = Math.min(CFG.lcdRows / H, Math.max(CFG.lcdCols / W, CFG.lcdRowsMin / H));
+  PIX = CFG.lcdRows / H;                          // ... y el punto tampoco
+  W = CFG.lcdCols / PIX;                          // ... asi que el ancho tambien es fijo
+  // El lienzo es el mayor 16:9 que entra en la ventana; el resto queda en negro,
+  // que es el fondo del body. Antes se estiraba hasta los bordes y el juego
+  // terminaba viendose distinto —y jugandose distinto, porque entraba mas mundo
+  // en cuadro— en cada aparato.
+  let cw = Wpx, ch = Math.round(cw * H / W);
+  if (ch > Hpx) { ch = Hpx; cw = Math.round(ch * W / H); }
+  SC = ch / H;                                    // px CSS por unidad de mundo, ya sobre el lienzo
+  BAR.x = (Wpx - cw) / 2; BAR.y = (Hpx - ch) / 2;
   const bw = Math.max(1, Math.round(W * PIX)), bh = Math.max(1, Math.round(H * PIX));
   for (const c of [scene, trail]) { c.width = bw; c.height = bh; }
   LW = bw;                                        // el hit-test lo necesita antes del primer frame
-  cv.width = Math.floor(Wpx * DPR); cv.height = Math.floor(Hpx * DPR);
-  cv.style.width = Wpx + 'px'; cv.style.height = Hpx + 'px';
+  cv.width = Math.floor(cw * DPR); cv.height = Math.floor(ch * DPR);
+  cv.style.width = cw + 'px'; cv.style.height = ch + 'px';
   ctx.setTransform(PIX, 0, 0, PIX, 0, 0);
   ctx.imageSmoothingEnabled = false;
   tctx.setTransform(1, 0, 0, 1, 0, 0);            // la estela se escribe por pixel, sin transform
@@ -2626,9 +2644,12 @@ function worldBox(x, y, w, h, label) {
 // El puente CSS -> LCD es PIX/SC: a px CSS constantes, en una pantalla mas alta
 // el recorte se come menos filas del LCD.
 const cssToLcd = () => PIX / SC;
-function safeX() { return Math.round(SAFE.l * cssToLcd()); }
-function safeY() { return Math.round(SAFE.t * cssToLcd()); }
-function safeW() { return Math.round(SAFE.r * cssToLcd()); }
+// Lo que el recorte del aparato tapa DEL LIENZO: el margen menos la barra negra
+// que ya lo estaba cubriendo (BAR). Nunca negativo.
+const safeCut = (inset, bar) => Math.max(0, inset - bar);
+function safeX() { return Math.round(safeCut(SAFE.l, BAR.x) * cssToLcd()); }
+function safeY() { return Math.round(safeCut(SAFE.t, BAR.y) * cssToLcd()); }
+function safeW() { return Math.round(safeCut(SAFE.r, BAR.x) * cssToLcd()); }
 function hit(b, t) { return t && t.x >= b.x && t.x <= b.x + b.w && t.y >= b.y && t.y <= b.y + b.h; }
 // Un boton esta "apretado" mientras haya un dedo encima: es el estado
 // resaltado de los menus de la Game Boy y ademas da respuesta al toque.
@@ -3334,8 +3355,12 @@ function frame(now) {
   const nav = Nav.update(dt);
 
   // orientacion (§12.7)
-  if (H > W && screen !== SCREEN.ROTATE) { prevScreen = screen; screen = SCREEN.ROTATE; }
-  else if (H <= W && screen === SCREEN.ROTATE) { screen = prevScreen; Input.lastTouch = now; }
+  // Vertical se mide en PIXELES DEL APARATO, no en unidades de mundo: el mundo
+  // esta clavado en 16:9, asi que H > W ya nunca seria cierto y la pantalla de
+  // rotar quedaria inalcanzable —un movil en vertical mostraria una franja
+  // diminuta en vez de pedir que lo giren—.
+  if (Hpx > Wpx && screen !== SCREEN.ROTATE) { prevScreen = screen; screen = SCREEN.ROTATE; }
+  else if (Hpx <= Wpx && screen === SCREEN.ROTATE) { screen = prevScreen; Input.lastTouch = now; }
 
   if (screen === SCREEN.PLAY || screen === SCREEN.DEMO) {
     updatePlay(dt * G.timeScale);
