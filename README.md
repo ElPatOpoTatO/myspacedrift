@@ -18,9 +18,17 @@ una partida de verdad.*
 ## Controles
 
 Hacen falta dos dispositivos: la partida se abre en una pantalla grande (TV,
-portátil) y el móvil hace de mando. La pantalla grande muestra un código de
-seis dígitos; en el móvil se abre la misma URL con `?ctrl` y se escribe ahí
-ese código.
+portátil) y el móvil hace de mando. En la pantalla grande se entra a **`CONNECT
+PHONE`**, que muestra la dirección y un código de seis dígitos; en el móvil se
+abre esa misma URL (la de siempre con `?ctrl`) y se escribe ahí ese código.
+
+![La pantalla de emparejamiento](media/shot-link.png)
+
+El emparejamiento vive en su propia pantalla a propósito. Antes el código estaba
+siempre a la vista —al pie del menú y en una esquina del `GAME OVER`— y pagaban
+las dos: en el menú se comía el alto que necesitaban las opciones y en el
+`GAME OVER` se cruzaba con el título, justo cuando nadie lo está mirando. Ahora
+lo busca quien quiere el mando, que es el único momento en que sirve.
 
 No hace falta que estén en la misma red: sirve wifi, ethernet o datos
 móviles, con que los dos tengan internet. El enlace intenta primero la vía
@@ -29,31 +37,46 @@ directa y, si el NAT no la deja pasar, sale por un servidor TURN de relevo.
 El código de la pantalla no cambia al recargar: queda guardado, así que el
 móvil se reconecta solo cuando la tele vuelve.
 
-La dirección se parte en dos renglones cuando no entra de uno. Con el rótulo
-delante mide 281 puntos y el LCD no pasa de `CFG.lcdCols`, así que se cortaba
-por los dos lados justo el renglón que hay que teclear en el móvil. El corte va
-en la primera `/`: el dominio arriba y el resto abajo, que es donde la vista ya
-corta sola.
+La dirección se parte en dos renglones cuando no entra de uno. Mide 245 puntos y
+el LCD no pasa de `CFG.lcdCols`, así que se cortaba por los dos lados justo el
+renglón que hay que teclear en el móvil. El corte va en la primera `/`: el
+dominio arriba y el resto abajo, que es donde la vista ya corta sola.
 
 Partirla hace crecer el bloque, y en las pantallas que caen al piso de filas el
-alto no sobra, así que `drawMenu` reparte cediendo por utilidad: primero se cae
-la ayuda de navegación (repite lo que dice la franja de abajo), después el
-tamaño del título (es adorno) y solo al final el del código. La dirección no se
-corta nunca y el código no se saca nunca: sin esos dos no hay con qué emparejar
-el móvil, que es lo único que esa pantalla tiene que resolver.
+alto no sobra, así que `drawLink` reparte cediendo por utilidad: primero se
+achica el título (es adorno) y solo al final el código, que es lo único que se
+lee de lejos. La dirección no se corta nunca y el código no se saca nunca: sin
+esos dos la pantalla no sirve para lo único que hace.
 
-Ya en el mando, se toca:
+### El mando
 
-- Lado izquierdo — propulsor izquierdo
-- Lado derecho — propulsor derecho
-- Ambos lados — freno
+El mando es un mando: dos botones grandes que ocupan la pantalla del móvil y se
+**encienden** mientras el dedo los aprieta.
+
+- `LEFT` — propulsor izquierdo
+- `RIGHT` — propulsor derecho
+- Los dos a la vez — freno; en los menús, elegir
+
+Antes el móvil mostraba una miniatura de la pantalla del juego —el mismo formato
+que la tele, letterbox incluido— y mandaba la posición exacta del dedo. Se veía
+como una franja apaisada flotando en el medio de la nada y había que *apuntar* a
+una mitad en vez de apretar un botón. Ahora cada dedo se manda como un punto en
+el centro del lado que aprieta, así que del lado de la tele no cambió nada: para
+el juego sigue siendo un dedo apoyado en esa mitad de su pantalla.
+
+El lado sale de la mitad de la pantalla del móvil y no del botón que recibió el
+toque, así que el hueco entre los dos y el margen del aparato también cuentan, y
+arrastrar el dedo de un motor al otro cambia de motor sin levantarlo.
+
+Los menús se manejan desde el mando con esos mismos dos botones: uno mueve la
+selección y los dos juntos eligen (§4.2).
 
 ## Demo
 
-El menú tiene tres opciones: `PLAY`, `DEMO` y `HIGH SCORES`. `DEMO` es para
-mirar: la máquina juega una partida de verdad y el juego se explica solo
-mientras ella vuela, así que sirve para enseñárselo a alguien sin tener que
-narrarlo.
+El menú tiene cuatro opciones: `PLAY`, `DEMO`, `HIGH SCORES` y `CONNECT PHONE`.
+`DEMO` es para mirar: la máquina juega una partida de verdad y el juego se
+explica solo mientras ella vuela, así que sirve para enseñárselo a alguien sin
+tener que narrarlo.
 
 Se ve la partida entera —marcador, nivel, sonido y campo a plena luz— y encima
 dos cosas que no están al jugar:
@@ -338,10 +361,13 @@ del doble que la maquinita, y el juego se veía **fino** en vez de pixelado.
 Bajar las filas obliga a que la interfaz se reacomode, y hay dos lugares donde
 se nota:
 
-- El **menú** ancla el código de emparejamiento encima de la franja de controles
-  y sube el cuadro detrás de él. Lo primero que se cae es la ayuda de navegación
-  (`L/R — MOVE`), que repite lo que ya dice la franja. El código no se toca
-  nunca: sin él no hay con qué emparejar el móvil.
+- El **menú**, el **`GAME OVER`** y la pantalla del mando reparten el alto antes
+  de dibujar, en vez de anclar cada cosa a una fila fija de la rejilla: el
+  bloque de abajo se apoya sobre la franja de controles y el resto se acomoda en
+  lo que sobra. Lo primero que se cae es la ayuda de navegación (`L/R — MOVE`),
+  que repite lo que ya dice la franja; después el tamaño del título. Con filas
+  fijas, en 104 filas el cuadro de opciones del `GAME OVER` salía escrito encima
+  de `BRAKE`.
 - El **top 10** pasa a dos columnas cuando las diez filas no entran en una. Lo
   que falta de alto sobra de ancho, que es justo lo que hace falta para
   partirlas. En dos columnas se cae el nivel, que es lo único prescindible: la

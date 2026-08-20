@@ -98,47 +98,88 @@ console.log('\nmargenes seguros (notch)');
         `${still.cssW} vs ${still.W}`);
 }
 
-console.log('\nla direccion de emparejamiento entra en la pantalla');
+console.log('\nlas pantallas quietas entran en el LCD');
 {
-  // El fallo: 'PHONE elpatopotato.github.io/myspacedrift/?ctrl' mide 281 puntos
-  // y el LCD no pasa de lcdCols, asi que el renglon que hay que tipear en el
-  // celular salia cortado por los dos lados. Ahora se parte en dos, y partirlo
-  // hace crecer el bloque: el reparto vertical de drawMenu tiene que contar con
-  // eso o el codigo se come la franja de controles.
+  // Tres fallos distintos viven en este bloque.
   //
-  // No se recalcula la formula aca —seria copiarla y se desincronizaria—: se
-  // mira Menu.layout, que es el reparto que el dibujo publica de verdad.
+  // Uno: 'elpatopotato.github.io/myspacedrift/?ctrl' mide 245 puntos y el LCD no
+  // pasa de lcdCols, asi que el renglon que hay que tipear en el celular salia
+  // cortado por los dos lados. Se parte en dos, y partirlo hace crecer el
+  // bloque: el reparto de la pantalla CONNECT PHONE tiene que contar con eso.
+  //
+  // Dos: GAME OVER ponia cada cosa en una fila fija de la rejilla, y eso solo
+  // cerraba con las 144 filas de la consola. Con el piso de filas (§21.2) la
+  // pantalla baja a 104 y el cuadro de opciones caia encima de la franja de
+  // controles: PLAY AGAIN salia escrito sobre BRAKE.
+  //
+  // Tres: el menu tiene una opcion mas y ya no lleva el codigo debajo.
+  //
+  // No se recalculan las formulas aca —seria copiarlas y se desincronizarian—:
+  // se mira Menu.layout, que es el reparto que cada dibujo publica de verdad.
+  const HELP_H = 4 + 7;                    // la ayuda de navegacion: 4 de aire + un renglon
   for (const [w, h] of [[768, 576], [1024, 576], [1920, 1080], [1366, 768], [1280, 576], [2560, 1080]]) {
     const p = await (await browser.newContext({ viewport: { width: w, height: h }, hasTouch: true })).newPage();
+    p.on('pageerror', e => { if (!KNOWN_NOISE(e)) errors.push(`${w}x${h}: ${e}`); });
     await p.goto(`${base}/index.html`, { waitUntil: 'load' });
     await p.waitForTimeout(300);
     const r = await p.evaluate(async () => {
       Link.url = () => 'https://elpatopotato.github.io/myspacedrift/?ctrl';
-      const st = Link.status(); st.code = Link.code(); st.error = '';
-      quitAttract();                       // con la demo puesta el menu dibuja DEMO y no el codigo
-      await new Promise(requestAnimationFrame);
-      await new Promise(requestAnimationFrame);
-      const rows = linkRows(LW / 2, 'center');
-      return {
-        widest: Math.max(...rows.map(s => Font.width(s, 1))), room: LW - T,
-        // el hit-test llama tintBox() sin argumento; el dibujo le pasa su escala
-        LW, LH: LH(), tintHit: tintBox().w, tintDrawn: tintBox(Menu.layout.ts).w,
-        ...Menu.layout,
-      };
+      const st = Link.status(); st.code = Link.code(); st.error = ''; st.linked = false;
+      quitAttract();                       // con la demo puesta el menu no dibuja el cuadro quieto
+      const drawn = async () => { await new Promise(requestAnimationFrame); await new Promise(requestAnimationFrame); };
+
+      await drawn();
+      // el hit-test llama tintBox() sin argumento; el dibujo le pasa su escala
+      const menu = { ...Menu.layout, rows: Menu.rows.length,
+                     tintHit: tintBox().w, tintDrawn: tintBox(Menu.layout.ts).w };
+
+      screen = SCREEN.LINK;
+      await drawn();
+      const link = { ...Menu.layout, rowsShown: Menu.rows.join('|'),
+                     widest: Math.max(...linkRows(LW - 2 * T).map(s => Font.width(s, 1))) };
+
+      hs.pending = false;
+      screen = SCREEN.DEAD;
+      await drawn();
+      const dead = { ...Menu.layout, rows: Menu.rows.length };
+
+      screen = SCREEN.MENU;
+      return { menu, link, dead, LW, LH: LH(), room: LW - 2 * T };
     });
-    check(`${w}x${h}: la direccion no se corta`, r.widest <= r.room,
-          `${r.widest} de ${r.room} (${r.rows} renglon/es, LCD ${r.LW}x${r.LH})`);
-    check(`${w}x${h}: el codigo no pisa la franja`, r.codeY + r.codeH <= r.hintsY,
-          `codigo hasta ${r.codeY + r.codeH}, franja en ${r.hintsY}`);
-    check(`${w}x${h}: el cuadro no le trepa al titulo`, r.boxTop >= r.titleEnd,
-          `cuadro en ${r.boxTop}, titulo hasta ${r.titleEnd}`);
-    // El codigo es lo ultimo que cede: antes se cae la ayuda y baja el titulo.
-    check(`${w}x${h}: el codigo sigue en grande`, r.codeS === 2,
-          `escala ${r.codeS} (titulo en ${r.ts}, ayuda ${r.help ? 'si' : 'no'})`);
+    const at = `${w}x${h}`, size = `LCD ${r.LW}x${r.LH}`;
+
+    // ---- menu ----
+    check(`${at}: el menu ofrece las cuatro opciones`, r.menu.rows === 4, `${r.menu.rows} filas`);
+    check(`${at}: el cuadro del menu no le trepa al titulo`, r.menu.boxTop >= r.menu.titleEnd,
+          `cuadro en ${r.menu.boxTop}, titulo hasta ${r.menu.titleEnd} (${size})`);
+    check(`${at}: el cuadro del menu no pisa la franja`,
+          r.menu.boxTop + r.menu.boxH + (r.menu.help ? HELP_H : 0) <= r.menu.hintsY,
+          `cuadro hasta ${r.menu.boxTop + r.menu.boxH}, franja en ${r.menu.hintsY}`);
     // el easter egg se toca sobre el titulo: la zona del hit-test tiene que
     // medir lo mismo que la que se dibujo, o se toca donde no hay nada
-    check(`${w}x${h}: el area del tinte coincide con el titulo dibujado`,
-          r.tintHit === r.tintDrawn, `hit ${r.tintHit} vs dibujo ${r.tintDrawn}`);
+    check(`${at}: el area del tinte coincide con el titulo dibujado`,
+          r.menu.tintHit === r.menu.tintDrawn, `hit ${r.menu.tintHit} vs dibujo ${r.menu.tintDrawn}`);
+
+    // ---- pantalla del mando ----
+    check(`${at}: la direccion no se corta`, r.link.widest <= r.room,
+          `${r.link.widest} de ${r.room} (${r.link.rows} renglon/es, ${size})`);
+    check(`${at}: el codigo no pisa el cuadro`, r.link.codeEnd <= r.link.boxTop - 2,
+          `codigo hasta ${r.link.codeEnd}, cuadro en ${r.link.boxTop}`);
+    check(`${at}: el cuadro del mando no pisa la franja`,
+          r.link.boxTop + r.link.boxH <= r.link.hintsY, `cuadro hasta ${r.link.boxTop + r.link.boxH}`);
+    // el codigo es lo ultimo que cede: antes se achica el titulo
+    check(`${at}: el codigo sigue leyendose de lejos`, r.link.cs >= 2,
+          `escala ${r.link.cs} (titulo en ${r.link.ts}, ${size})`);
+    check(`${at}: del mando se vuelve`, r.link.rowsShown === 'BACK', r.link.rowsShown);
+
+    // ---- GAME OVER ----
+    check(`${at}: las opciones de GAME OVER no pisan la franja`,
+          r.dead.blockTop + r.dead.blockH + (r.dead.help ? HELP_H : 0) <= r.dead.hintsY,
+          `cuadro hasta ${r.dead.blockTop + r.dead.blockH}, franja en ${r.dead.hintsY} (${size})`);
+    check(`${at}: el nivel no se mete en las opciones`, r.dead.statsEnd <= r.dead.blockTop - 2,
+          `texto hasta ${r.dead.statsEnd}, cuadro en ${r.dead.blockTop}`);
+    check(`${at}: el marcador de GAME OVER sigue en grande`, r.dead.s === 2,
+          `escala ${r.dead.s} (${size})`);
     await p.context().close();
   }
 }
