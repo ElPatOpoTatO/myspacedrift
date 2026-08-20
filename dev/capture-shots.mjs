@@ -34,11 +34,10 @@ import { serve, playwright, ROOT } from './harness.mjs';
 
 const OUT = join(ROOT, 'media');
 
-// La direccion publica. La captura corre contra un servidor local, asi que sin
-// esto el menu sale anunciando 127.0.0.1 y la foto contradice al juego de verdad.
-const SITE = 'https://elpatopotato.github.io/myspacedrift/';
-// El codigo es el mismo que sale en shot-menu.png: la foto del celular y la de
-// la tele tienen que poder mirarse juntas.
+// El codigo que se teclea en el celular. Es fijo para que la foto no cambie
+// entre corridas, y no coincide con el de ninguna captura de la tele: el codigo
+// de verdad lo genera cada aparato (Link.code()), asi que shot-link.png trae el
+// suyo. La foto del mando ensena la pantalla, no un emparejamiento concreto.
 const CODE = '337282';
 
 // 576 = 144 filas por 4, o sea cada punto del LCD en cuatro pixeles enteros
@@ -269,19 +268,18 @@ if (want('split')) {
 /* --------- 4) el tinte: el mismo menu con el cristal verde --------- */
 if (want('tint')) {
   // Va en 4:3 y no en 16:9 como shot-menu.png por una razon concreta: el nombre
-  // del tinte se dibuja justo encima del cuadro del menu, y en una pantalla de
-  // 16:9 el reparto del alto sube ese cuadro hasta taparlo (§21.2). El color se
-  // ve igual en las dos, pero la foto que explica el easter egg es esta.
+  // del tinte se dibuja debajo del titulo, y en 16:9 el reparto del alto sube el
+  // cuadro del menu hasta taparlo (§21.2). Con las medidas de drawMenu: en 4:3 el
+  // cuadro se planta en la fila 40 y el nombre, que ocupa de la 30 a la 36, queda
+  // libre; en 16:9 el cuadro sube a la 29 y le pasa por encima. El color se ve
+  // igual en las dos, pero la foto que explica el easter egg es esta.
   const page = await open(TV);
-  await page.evaluate(({ site, code }) => {
+  await page.evaluate(() => {
     Sfx.quiet = true;
     quitAttract();                       // sin esto la demo de fondo arranca sola a los 6 s
     Input.lastTouch = performance.now();
-    Link.url = () => site + '?ctrl';      // el menu imprime location, que aca es el servidor de pruebas
-    const st = Link.status();
-    st.code = code; st.error = '';       // el mismo codigo que la tele en shot-menu.png y el celular
     Tint.cycle();                        // MONO -> GREEN, y con el nombre debajo del titulo
-  }, { site: SITE, code: CODE });
+  });
   await freezeAfter(page, 3);
   await save(page, 'shot-tint.png', 'el menu con el vidrio verde (easter egg)');
 }
@@ -305,7 +303,7 @@ if (want('phone')) {
   await page.evaluate((code) => {
     const input = document.getElementById('ctrl-code');
     if (!input) throw new Error('la pantalla del mando no se dibujo');
-    input.value = code;                  // el mismo codigo que muestra la tele en shot-menu.png
+    input.value = code;                  // un codigo cualquiera: la foto ensena la pantalla, no un enlace
   }, CODE);
   await save(page, 'shot-phone.png', 'el celular de mando, con el codigo de la tele');
 }

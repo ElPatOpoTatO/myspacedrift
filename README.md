@@ -483,8 +483,10 @@ que encima de una roca no se ven) y después se pide un cuadro suelto para
 dibujarlos.
 
 El tinte va en 4:3 y no en 16:9 como `shot-menu.png` por un detalle del reparto
-del alto: el nombre del tinte se dibuja justo encima del cuadro del menú, y en
-una pantalla de 16:9 el cuadro sube hasta taparlo. El color se ve igual en las
+del alto: el nombre del tinte se dibuja debajo del título, y en 16:9 el cuadro
+del menú sube hasta taparlo. Con las medidas de `drawMenu`, en 4:3 el cuadro se
+planta en la fila 40 y el nombre, que ocupa de la 30 a la 36, queda libre; en
+16:9 el cuadro sube a la 29 y le pasa por encima. El color se ve igual en las
 dos; la que explica el easter egg es esta.
 
 #### La portada de itch.io

@@ -57,9 +57,9 @@ también lo que más se puede romper en la ficha (ver la nota de abajo). Si el e
 ya funciona desde donde esté publicado, esta línea va al final del cuerpo:
 
 ```
-Two devices, if you have them: open it on a TV or laptop, put `?ctrl` on the end of
-the same address on your phone, type the six-digit code on screen, and the phone is
-the pad.
+Two devices, if you have them: open it on a TV or laptop and pick CONNECT PHONE.
+Open the address it shows on your phone, type the six-digit code in, and the phone
+is the pad.
 ```
 
 ---
@@ -100,8 +100,8 @@ sacan las capturas, así que lo que se ve en la ficha es lo que se ve en las fot
 
 ## Antes de publicar: la dirección del mando
 
-El menú publica `location.origin + location.pathname + '?ctrl'`, o sea la dirección
-desde la que se esté sirviendo el juego. En GitHub Pages eso es
+La pantalla **CONNECT PHONE** publica `location.origin + location.pathname + '?ctrl'`,
+o sea la dirección desde la que se esté sirviendo el juego. En GitHub Pages eso es
 `elpatopotato.github.io/myspacedrift/?ctrl`, que se puede teclear en un celular.
 **En itch.io el juego corre dentro de un iframe servido desde un dominio de CDN**
 (algo como `v6p9d9t4.ssl.hwcdn.net/html/1234567/index.html`), así que el renglón que
