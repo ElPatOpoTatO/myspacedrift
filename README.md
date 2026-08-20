@@ -562,6 +562,35 @@ literalmente lo que se calcula. Que esto no existiera es la razón por la que la
 bala fue un punto sin dimensión durante toda la vida del proyecto sin que nadie
 lo notara.
 
+### Publicar en itch.io
+
+```sh
+tools/publish-itch.sh --dry-run   # dice qué subiría
+tools/publish-itch.sh             # lo sube
+```
+
+Lo que se sube no es el repositorio: es el juego. La lista sale del propio service
+worker —`FILES` en `sw.js` es, por definición, todo lo que el juego necesita para
+arrancar sin internet— más el `sw.js`, así que no hay dos listas que se puedan
+desincronizar y ni `dev/`, ni `media/`, ni `marketing/`, ni este README viajan a la
+ficha. La versión de la build también sale de ahí: el número de `CACHE`, que es el
+que ya hay que subir cada vez que cambia `index.html`.
+
+Hace falta [butler](https://itch.io/docs/butler/installing.html) y estar autenticado
+(`butler login` una vez, o `BUTLER_API_KEY` si se hace desde CI). El destino se
+cambia sin tocar el archivo: `ITCH_TARGET=usuario/juego tools/publish-itch.sh`.
+
+El texto de la ficha —título, tagline, descripción y las casillas de itch— está en
+`marketing/itch/PAGE.md`, listo para copiar.
+
+**Una cosa que hay que decidir antes de publicar ahí:** la pantalla `CONNECT PHONE`
+anuncia la dirección desde la que se está sirviendo el juego, y en itch.io eso es un
+dominio de CDN dentro
+de un iframe (`v6p9d9t4.ssl.hwcdn.net/html/…`), o sea un renglón que no se puede
+teclear en un celular. Así que, o el emparejamiento no se anuncia en esa ficha, o el
+juego pasa a publicar siempre la dirección pública en vez de la suya (una línea en
+`Link.url()`, subiendo el `CACHE` de `sw.js`).
+
 ### Material para mostrarlo
 
 `media/` no se precachea: son GIFs y fotos para enseñar el juego fuera, no
@@ -578,3 +607,148 @@ navegador y la vuela el mismo bot de la demo.
 
 `marketing/reddit/` tiene el texto para publicarlo, la lista de subreddits y el
 orden en que conviene ir.
+
+#### Cinco fotos más
+
+`capture-media.mjs` saca las cuatro básicas —menú, campo, cartel de nivel y tabla
+de records— y además graba los GIFs, que tarda minutos. Las otras cinco van
+aparte, y salen en segundos:
+
+```sh
+node dev/capture-shots.mjs             # las cinco
+node dev/capture-shots.mjs demo split  # o solo algunas
+```
+
+No enseñan pantallas: enseñan lo que el juego **tiene** y una foto del campo no
+cuenta.
+
+| | qué muestra |
+| --- | --- |
+| `shot-demo.png` | la máquina jugando: el cartel que explica y la franja de abajo encendida en el motor que está apretando |
+| `shot-pickups.png` | los dos recolectables juntos, que jugando casi nunca coinciden: la cruz quieta y el núcleo con satélites en órbita |
+| `shot-split.png` | una roca partida en dos, con su polvo y el anillo del golpe |
+| `shot-tint.png` | el menú con el cristal verde: el easter egg del tinte, y la única foto en color |
+| `shot-phone.png` | el celular haciendo de mando, que es la mitad del juego y no sale en ninguna captura de la tele |
+
+Tampoco acá hay montaje: cada foto es el juego corriendo, volado por el mismo bot
+de la demo. Lo único que se hace es ponerlo en la situación —darle los dos
+recolectables, partir una roca, girar el vidrio— y esperar al cuadro que sirve.
+
+Y esperar al cuadro que sirve es literal. El obturador va enganchado a `frame`,
+el bucle del juego: se deja que actualice y **dibuje**, y recién ahí se pregunta
+si el cuadro sirve. Mirándolo desde un `requestAnimationFrame` aparte no alcanza,
+porque el del script y el del juego caen en la misma tanda y el del juego puede
+correr después: lo que se fotografía es entonces el cuadro *siguiente* al que se
+aprobó. Con cosas que duran dos cuadros —el motor que la máquina tiene apretado
+ahora mismo— eso es la diferencia entre la foto que se buscaba y otra: pidiendo
+un solo motor salía la del freno. Y para cortar no basta con pisar
+`requestAnimationFrame`, porque el juego se reagenda en su primera línea y ese
+cuadro ya pedido se dibuja igual encima del bueno; hay una bandera que lo manda
+de vuelta sin dibujar.
+
+Dos fotos se arman con el juego ya congelado, que es cuando se puede elegir
+dónde va cada cosa mirando dónde **no** hay nada: los recolectables buscan el
+hueco más despejado alrededor de la nave (a esta escala miden cinco píxeles, así
+que encima de una roca no se ven) y después se pide un cuadro suelto para
+dibujarlos.
+
+Las cinco salen en la misma ventana, 960×540. La retícula es 192×108 en cualquier
+aparato, así que ya no hay un 4:3 que muestre más filas ni un 16:9 que muestre más
+mundo: elegir forma de ventana sólo cambia el tamaño del punto, y 960 entre 192 da
+cinco píxeles por punto, enteros. Cualquier otra forma se llena de negro arriba y
+abajo, porque el lienzo se encoge al mayor 16:9 que entre.
+
+La del tinte enseña el **vidrio**, no el nombre. Antes iba aparte, en 4:3, justo para
+pescar el cartel `TINT GREEN`: con la retícula vieja el alto cambiaba con la pantalla y
+en 4:3 (144 filas) el cuadro del menú caía en la fila 40 y lo dejaba libre. Clavada en
+192×108 el cuadro empieza siempre en la 24 y el cartel ocupa de la 30 a la 37, así que
+queda tapado en toda pantalla —`drawMenu` lo dibuja antes que el cuadro— y no hay ventana
+desde la que fotografiarlo.
+
+#### La portada de itch.io
+
+`media/cover.png` mide 630×500, que es lo que muestra la ficha de itch.io, y
+sale de donde sale todo lo demás: la dibuja el juego. El reparto y el porqué de
+cada número están en `dev/cover-art.mjs`, que es el módulo que comparten las dos
+capturas de abajo.
+
+```sh
+node dev/capture-cover.mjs        # solo playwright, sin ffmpeg
+```
+
+![La portada de itch.io](media/cover.png)
+
+Dos números la definen:
+
+- **126 × 100 puntos a 5 píxeles el punto** son 630×500 exactos. El punto tiene
+  que caer entero: si no, la retícula cojea —celdas de tres píxeles al lado de
+  celdas de cuatro— y se ensucia justo lo que hace reconocible al juego.
+- **0,8 puntos por unidad de mundo**, contra los 0,225 de la pantalla de verdad.
+  A la escala del juego la nave mide seis puntos, y en la miniatura de la tienda
+  eso es una mota; acá mide veintidós. Es la misma nave, con el mismo trazo de un
+  punto y la misma física: cambia a qué distancia se la mira, no cómo está hecha.
+
+La escena no es un cuadro robado a una partida. En una partida la nave está
+donde está, y una portada necesita el nombre con su sitio libre y la nave
+apuntando hacia adentro, así que las piezas se colocan a mano —`LAYOUT.scene`, en
+puntos de LCD— y después se las deja volar unos cuadros para que quede la estela.
+Lo que se ve sigue siendo el juego, y siempre a través de sus propias rutinas:
+
+- la nave sale de `SHIP_SEGS`, con los motores encendidos y **girando**;
+- la bala sale con la cuenta de `updatePlay`, así que **tumbea**: el giro tiene
+  su piso en la velocidad de la nave y sale hacia el lado al que la nave estaba
+  girando, que es lo que hace que la raya del disparo se abra en abanico en vez
+  de salir clavada;
+- la roca de arriba a la izquierda **se está partiendo**, y la parte
+  `splitMeteor`: las dos mitades son la misma roca cortada por el medio —los
+  mismos vértices, 40% de masa cada una— abriéndose en abanico, con el 20% que no
+  se lleva ninguna hecho polvo por la línea del corte;
+- y el resto es `makeRock`, `drawPickup`, `Stars`, `Font`, y los cuatro tonos y
+  la retícula del shader. Va en MONO, como el icono.
+
+**La estela se mide en pantalla, no en el mundo.** El fantasma se apaga por
+tiempo, así que mide lo que la pieza haya volado en esos tres cuadros: siempre lo
+mismo en unidades de mundo, pero acá el punto es más de tres veces más grande, o
+sea que en puntos de LCD el rastro salía más de tres veces más largo que jugando
+—la bala arrastraba una raya larguísima, o sea un láser, y la nave una mancha—. El
+paso del reloj va corrido por `PIX / pixel`, donde `PIX` sale de `CFG.lcdRows`, así
+que la corrección se ajusta sola cuando cambia la retícula del juego; y con eso
+cada pieza deja el mismo rastro **en pantalla** que deja jugando. El paso sigue siendo un
+cuadro entero del hardware: partirlo no acorta la estela y sí multiplica las
+llamas del motor, que `drawShip` sortea de nuevo en cada llamada.
+
+Lo único que se deja fuera es el anillo del impacto: dura 0,28 s y crece a 130
+unidades por segundo, así que a este zoom, y con la estela detrás, deja una banda
+gris de cinco puntos de grosor que no se lee como un golpe sino como una luna.
+
+Sale siempre igual —el azar va sembrado y el reloj de las estrellas, clavado—,
+así que regenerarla no ensucia el repositorio con una imagen distinta cada vez.
+
+#### El cartucho
+
+`media/cartridge.png` es una maqueta: el juego es una web y no existe en
+plástico. Sirve para la ficha y para las redes, donde una silueta de cartucho
+dice de un vistazo de qué va esto sin tener que explicarlo.
+
+```sh
+node dev/capture-cartridge.mjs
+```
+
+![El cartucho](media/cartridge.png)
+
+La etiqueta no es un dibujo: es **la misma escena de la portada**, con el
+cristal verde puesto. El color entra por donde entraba en la consola —por el
+vidrio (§21.1)—, así que la escena sigue cuantizada a los mismos cuatro tonos y
+el tinte se multiplica al final, en el shader: es el juego con el `GREEN` que
+está escondido en el menú, no una paleta inventada para la foto. Va pegada 1:1,
+630×500 sin reescalar, porque reescalarla sería volver a inventar medios tonos.
+
+El plástico, en cambio, se dibuja con canvas normal, con degradados y sombras: es
+un objeto físico, no una pantalla, así que no pasa por el LCD ni tiene por qué
+respetar sus cuatro tonos. La proporción es la del cartucho de verdad (57 × 65
+mm) y de ahí salen el bisel de la esquina, las estrías de agarre y el escalón de
+abajo.
+
+No lleva ninguna marca ajena: la forma de un cartucho es la forma de un cartucho,
+pero los logotipos son de quien son. Lo único escrito es el nombre del juego, y
+va dentro de la etiqueta, con la fuente del juego.
